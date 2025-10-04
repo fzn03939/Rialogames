@@ -279,7 +279,7 @@ html, body {
 <!-- Loading Screen -->
 <div id="loadingScreen">
   <div class="loading-content">
-    <img src="https://i.imgur.com/GXfjXA7.jpeg" alt="Rialo Logo" class="loading-logo">
+    <img src="logo_transparent.png" alt="Rialo Logo" class="loading-logo">
     <p class="loading-text">Powered by Rialo</p>
     <div class="progress-bar">
       <div class="progress"></div>
@@ -306,10 +306,12 @@ html, body {
 }
 .loading-content { text-align:center; color:#fff; }
 .loading-logo {
-  width:120px; height:120px;
-  border-radius:20px;
-  animation: spin 12s linear infinite, pulse 2s infinite;
-  box-shadow:0 0 30px #00ffcc;
+  width: 140px;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  filter: drop-shadow(0 0 15px #00ffcc) drop-shadow(0 0 30px #00ffcc);
+  animation: spin 12s linear infinite, pulseGlow 2s infinite alternate;
 }
 @keyframes spin { from{transform:rotate(0);} to{transform:rotate(360deg);} }
 @keyframes pulse {
@@ -352,7 +354,7 @@ setTimeout(() => {
 </script>
 
 <div class="loading" id="loading">
-<img alt="logo" src="https://i.imgur.com/GXfjXA7.jpeg"/>
+<img alt="logo" src="logo_transparent.png" class="loading-logo"/>
 <div>Powered by Rialo</div>
 <div class="bar"><div class="fill" id="fill"></div>
   <div class="card" onclick="enter('flappy')">
@@ -458,7 +460,7 @@ setTimeout(() => {
 &lt;body&gt;&lt;button id=&quot;startBtn&quot; class=&quot;btn&quot;&gt;▶ Start Game&lt;/button&gt;
   &lt;!-- Loading --&gt;
   &lt;div id=&quot;loadingScreen&quot; aria-live=&quot;polite&quot;&gt;
-    &lt;img id=&quot;loadingLogo&quot; src=&quot;https://i.imgur.com/GXfjXA7.jpeg&quot; alt=&quot;Logo&quot; /&gt;
+    &lt;img id=&quot;loadingLogo&quot; src=&quot;logo_transparent.png&quot; alt=&quot;Logo&quot; /&gt;
     &lt;div id=&quot;loadingBarWrap&quot;&gt;&lt;div id=&quot;loadingBarFill&quot;&gt;&lt;/div&gt;&lt;/div&gt;
     &lt;div id=&quot;loadingPct&quot;&gt;0%&lt;/div&gt;
     &lt;div id=&quot;powered&quot;&gt;Powered by Rialo&lt;/div&gt;
@@ -494,7 +496,7 @@ setTimeout(() => {
 
 &lt;script&gt;
 (() =&gt; {
-  const imgURL = &#x27;https://i.imgur.com/GXfjXA7.jpeg&#x27;;
+  const imgURL = &#x27;logo_transparent.png&#x27;;
   const board = document.getElementById(&#x27;puzzle&#x27;);
   const levelSel = document.getElementById(&#x27;levelSel&#x27;);
   const btnStart = document.getElementById(&#x27;btnStart&#x27;);
@@ -827,7 +829,7 @@ let pendingDir=null; // queue one input per tick
 
 // Rialo logo as food
 let foodImg=new Image();
-foodImg.src=&quot;https://i.imgur.com/GXfjXA7.jpeg&quot;;
+foodImg.src=&quot;logo_transparent.png&quot;;
 
 // Instant audio pool
 let eatSounds=[]; for(let i=0;i&lt;6;i++) eatSounds.push(new Audio(&quot;https://actions.google.com/sounds/v1/cartoon/pop.ogg&quot;));
