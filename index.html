@@ -1198,6 +1198,13 @@ function backToMenu(){
   document.getElementById('menu').style.display='flex';
   document.getElementById('headerTitle').textContent = "Rialo Games";
 }
+  window.addEventListener('load', function () {
+  var target = window.location.hash.replace('#', '');
+  var valid = ['card', 'puzzle', 'snake', 'flappy'];
+  if (valid.includes(target) && typeof enter === 'function') {
+    setTimeout(function () { enter(target); }, 600);
+  }
+});
 </script>
 </body>
 </html>
