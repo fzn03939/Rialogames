@@ -310,25 +310,25 @@ html, body {
   height: auto;
   border-radius: 0;
   background: none;
-  filter: drop-shadow(0 0 15px #00ffcc) drop-shadow(0 0 30px #00ffcc);
+  filter: drop-shadow(0 0 15px #c9a876) drop-shadow(0 0 30px #c9a876);
   animation: spin 12s linear infinite, pulseGlow 2s infinite alternate;
 }
 @keyframes spin { from{transform:rotate(0);} to{transform:rotate(360deg);} }
 @keyframes pulse {
-  0%,100% { box-shadow:0 0 20px #00ffcc; }
-  50% { box-shadow:0 0 50px #00ffcc; }
+  0%,100% { box-shadow:0 0 20px #c9a876; }
+  50% { box-shadow:0 0 50px #c9a876; }
 }
 .loading-text {
   font-family:'Orbitron', sans-serif;
   font-size:22px;
   margin-top:15px;
-  color:#00ffcc;
-  text-shadow:0 0 10px #00ffcc, 0 0 20px #00ffcc;
+  color:#c9a876;
+  text-shadow:0 0 10px #c9a876, 0 0 20px #c9a876;
   animation: glow 2s ease-in-out infinite alternate;
 }
 @keyframes glow {
-  from {text-shadow:0 0 5px #00ffcc;}
-  to {text-shadow:0 0 20px #00ffcc;}
+  from {text-shadow:0 0 5px #c9a876;}
+  to {text-shadow:0 0 20px #c9a876;}
 }
 .progress-bar {
   width:280px; height:15px;
@@ -339,8 +339,8 @@ html, body {
 }
 .progress {
   width:0; height:100%;
-  background:linear-gradient(90deg,#00f,#0f0,#0ff,#f0f);
-  box-shadow:0 0 15px #0ff;
+  background:linear-gradient(90deg,#8b6f47,#c9a876,#e0c9a6);
+  box-shadow:0 0 15px #c9a876;
   animation:loadAnim 5s linear forwards;
 }
 @keyframes loadAnim { to {width:100%;} }
