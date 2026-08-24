@@ -280,7 +280,9 @@ html, body {
 <div id="loadingScreen">
   <div class="loading-content">
     <img src="logo_transparent.png" alt="Rialo Logo" class="loading-logo">
-    <p class="loading-text">Powered by Rialo </span>Community</span></p>
+    <p class="loading-text">
+  Powered by Rialo <span>Community</span>
+</p>
     <div class="progress-bar">
       <div class="progress"></div>
     </div>
@@ -325,6 +327,9 @@ html, body {
   color:#c9a876;
   text-shadow:0 0 10px #c9a876, 0 0 20px #c9a876;
   animation: glow 2s ease-in-out infinite alternate;
+}
+  .loading-text span {
+  display: block;
 }
 @keyframes glow {
   from {text-shadow:0 0 5px #c9a876;}
