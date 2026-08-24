@@ -1193,10 +1193,7 @@ function enter(id){
   document.getElementById('headerTitle').textContent = title;
 }
 function backToMenu(){
-  document.getElementById('appHeader').style.display='none';
-  document.querySelectorAll('section.app').forEach(s=>s.classList.remove('active'));
-  document.getElementById('menu').style.display='flex';
-  document.getElementById('headerTitle').textContent = "Rialo Games";
+  window.history.back();
 }
   window.addEventListener('load', function () {
   var target = window.location.hash.replace('#', '');
