@@ -14,31 +14,31 @@
     justify-content: center;
     font-family: 'Segoe UI', system-ui, sans-serif;
     background: radial-gradient(circle at top, #1a1024 0%, #0a0612 60%, #050308 100%);
-    color: #f3f0fa;
+    color: #F5F2EC;
     padding: 20px;
   }
   .card {
     width: 100%;
     max-width: 480px;
     background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(139,92,246,0.35);
+    border: 1px solid rgba(245, 242, 236, 0.4);
     border-radius: 20px;
     padding: 28px 24px;
     backdrop-filter: blur(10px);
-    box-shadow: 0 10px 40px rgba(139,92,246,0.15);
+    box-shadow: 0 10px 40px rgba(245, 242, 236, 0.1);
   }
   h1 {
     text-align: center;
     font-size: 1.6rem;
     margin: 0 0 4px;
-    background: linear-gradient(90deg, #a78bfa, #8b5cf6);
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
+    color: #F5F2EC;
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
   }
   .subtitle {
     text-align: center;
-    color: #b8aed6;
+    color: #EBE6DC;
     font-size: 0.85rem;
     margin-bottom: 20px;
   }
@@ -51,7 +51,7 @@
   }
   .progress-fill {
     height: 100%;
-    background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+    background: #F5F2EC;
     width: 0%;
     transition: width 0.3s ease;
   }
@@ -68,16 +68,16 @@
     padding: 13px 16px;
     margin-bottom: 10px;
     background: rgba(255,255,255,0.06);
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(245, 242, 236, 0.2);
     border-radius: 12px;
-    color: #f3f0fa;
+    color: #F5F2EC;
     font-size: 0.95rem;
     cursor: pointer;
     transition: all 0.2s ease;
   }
   .option:hover:not(:disabled) {
-    background: rgba(139,92,246,0.2);
-    border-color: #8b5cf6;
+    background: rgba(245, 242, 236, 0.15);
+    border-color: #F5F2EC;
   }
   .option.correct {
     background: rgba(34,197,94,0.25);
@@ -94,17 +94,17 @@
     align-items: center;
     margin-top: 16px;
     font-size: 0.85rem;
-    color: #b8aed6;
+    color: #EBE6DC;
   }
   .next-btn {
     display: none;
     width: 100%;
     margin-top: 16px;
     padding: 13px;
-    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+    background: #F5F2EC;
     border: none;
     border-radius: 12px;
-    color: white;
+    color: #121212;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
@@ -117,18 +117,18 @@
   .result h2 {
     font-size: 1.8rem;
     margin-bottom: 6px;
-    color: #a78bfa;
+    color: #F5F2EC;
   }
   .result p {
-    color: #cfc6e8;
+    color: #EBE6DC;
     margin-bottom: 20px;
   }
   .retry-btn {
     padding: 13px 24px;
-    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+    background: #F5F2EC;
     border: none;
     border-radius: 12px;
-    color: white;
+    color: #121212;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
@@ -275,7 +275,7 @@ function showResult() {
     scoreEmoji.textContent = '🏆';
     resultTitle.textContent = 'Rialo Expert!';
   } else if (pct >= 50) {
-    scoreEmoji.textContent = '👍';
+    scoreEmoji.textContent = '🎉';
     resultTitle.textContent = 'Pretty Good!';
   } else {
     scoreEmoji.textContent = '📚';
@@ -295,4 +295,4 @@ retryBtn.onclick = () => {
 loadQuestion();
 </script>
 </body>
-  </html>
+</html>
