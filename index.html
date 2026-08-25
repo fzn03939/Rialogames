@@ -379,7 +379,14 @@ setTimeout(() => {
     <h3> Rialo Flappy</h3>
     <p>Fly through the neon galaxy. Avoid obstacles and reach the highest score!</p>
   </div>
-
+   <div class="menu" id="menu">
+     <div class="title">RIALO Games</div>
+     <div class="cards"><div class="card" onclick="enter('card')">...
+       <div class="card" onclick="enter('flappy')">
+         <h3>🪐 Rialo Flappy</h3>
+         <p>Fly through the neon galaxy. Avoid obstacles...</p>
+       </div>
+      <div class="card" onclick="enter('quiz')"><h3>🧠 Rialo Quiz</h3><p>Test your Rialo knowledge!</p></div>
 </div>
 </div>
 <header id="appHeader">
@@ -1007,6 +1014,305 @@ sizeCanvas(); render();
     <div>Score: <span id="finalScore">0</span></div>
     <button id="startBtn" class="btn">▶ Start</button>
   </div>
+    <section class="app" id="quiz"><iframe srcdoc="&lt;!DOCTYPE html&gt;
+&lt;html lang=&quot;en&quot;&gt;
+&lt;head&gt;
+&lt;meta charset=&quot;UTF-8&quot;&gt;
+&lt;meta name=&quot;viewport&quot; content=&quot;width=device-width, initial-scale=1.0&quot;&gt;
+&lt;title&gt;Rialo Quiz&lt;/title&gt;
+&lt;style&gt;
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: &#x27;Segoe UI&#x27;, system-ui, sans-serif;
+    background: radial-gradient(circle at top, #1a1024 0%, #0a0612 60%, #050308 100%);
+    color: #f3f0fa;
+    padding: 20px;
+  }
+  .card {
+    width: 100%;
+    max-width: 480px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(139,92,246,0.35);
+    border-radius: 20px;
+    padding: 28px 24px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 40px rgba(139,92,246,0.15);
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.6rem;
+    margin: 0 0 4px;
+    background: linear-gradient(90deg, #a78bfa, #8b5cf6);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .subtitle {
+    text-align: center;
+    color: #b8aed6;
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+  .progress-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+  .question {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 18px;
+    line-height: 1.4;
+  }
+  .option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 13px 16px;
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    color: #f3f0fa;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .option:hover:not(:disabled) {
+    background: rgba(139,92,246,0.2);
+    border-color: #8b5cf6;
+  }
+  .option.correct {
+    background: rgba(34,197,94,0.25);
+    border-color: #22c55e;
+  }
+  .option.wrong {
+    background: rgba(239,68,68,0.25);
+    border-color: #ef4444;
+  }
+  .option:disabled { cursor: default; opacity: 0.9; }
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: #b8aed6;
+  }
+  .next-btn {
+    display: none;
+    width: 100%;
+    margin-top: 16px;
+    padding: 13px;
+    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .next-btn:hover { opacity: 0.9; }
+  .result {
+    text-align: center;
+    display: none;
+  }
+  .result h2 {
+    font-size: 1.8rem;
+    margin-bottom: 6px;
+    color: #a78bfa;
+  }
+  .result p {
+    color: #cfc6e8;
+    margin-bottom: 20px;
+  }
+  .retry-btn {
+    padding: 13px 24px;
+    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .score-emoji { font-size: 3rem; margin-bottom: 10px; }
+&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+&lt;div class=&quot;card&quot; id=&quot;quizCard&quot;&gt;
+  &lt;h1&gt;Rialo Quiz&lt;/h1&gt;
+  &lt;p class=&quot;subtitle&quot;&gt;How well do you know Rialo?&lt;/p&gt;
+
+  &lt;div class=&quot;progress-bar&quot;&gt;&lt;div class=&quot;progress-fill&quot; id=&quot;progressFill&quot;&gt;&lt;/div&gt;&lt;/div&gt;
+
+  &lt;div id=&quot;quizArea&quot;&gt;
+    &lt;div class=&quot;question&quot; id=&quot;questionText&quot;&gt;&lt;/div&gt;
+    &lt;div id=&quot;optionsArea&quot;&gt;&lt;/div&gt;
+    &lt;button class=&quot;next-btn&quot; id=&quot;nextBtn&quot;&gt;Next&lt;/button&gt;
+    &lt;div class=&quot;footer-row&quot;&gt;
+      &lt;span id=&quot;questionCounter&quot;&gt;&lt;/span&gt;
+      &lt;span id=&quot;scoreCounter&quot;&gt;&lt;/span&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+
+  &lt;div class=&quot;result&quot; id=&quot;resultArea&quot;&gt;
+    &lt;div class=&quot;score-emoji&quot; id=&quot;scoreEmoji&quot;&gt;🏆&lt;/div&gt;
+    &lt;h2 id=&quot;resultTitle&quot;&gt;&lt;/h2&gt;
+    &lt;p id=&quot;resultText&quot;&gt;&lt;/p&gt;
+    &lt;button class=&quot;retry-btn&quot; id=&quot;retryBtn&quot;&gt;Play Again&lt;/button&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;script&gt;
+const questions = [
+  {
+    q: &quot;Which company developed Rialo?&quot;,
+    options: [&quot;Subzero Labs&quot;, &quot;Mysten Labs&quot;, &quot;Alchemy Labs&quot;, &quot;Pantera Labs&quot;],
+    answer: 0
+  },
+  {
+    q: &quot;Rialo is often described as what kind of blockchain?&quot;,
+    options: [&quot;Gaming blockchain&quot;, &quot;Real-world blockchain&quot;, &quot;Privacy coin&quot;, &quot;Meme chain&quot;],
+    answer: 1
+  },
+  {
+    q: &quot;What allows Rialo to avoid relying on traditional oracles?&quot;,
+    options: [
+      &quot;Manual validators&quot;,
+      &quot;Smart contracts can directly access real-time data via one-line HTTPS calls&quot;,
+      &quot;All data is stored on a centralized server&quot;,
+      &quot;It doesn&#x27;t support smart contracts&quot;
+    ],
+    answer: 1
+  },
+  {
+    q: &quot;Rialo combines RISC-V smart contracts with compatibility for which VM?&quot;,
+    options: [&quot;Ethereum VM&quot;, &quot;Solana VM&quot;, &quot;Bitcoin Script&quot;, &quot;Cosmos SDK&quot;],
+    answer: 1
+  },
+  {
+    q: &quot;Who led Rialo&#x27;s $20 million seed funding round?&quot;,
+    options: [&quot;Coinbase Ventures&quot;, &quot;Pantera Capital&quot;, &quot;Variant&quot;, &quot;Hashed&quot;],
+    answer: 1
+  },
+  {
+    q: &quot;What is the name of Rialo&#x27;s feature that lets users log in with email, SMS, or social accounts?&quot;,
+    options: [&quot;Real World Data&quot;, &quot;Real World Identity&quot;, &quot;Real World Privacy&quot;, &quot;Real World Connectivity&quot;],
+    answer: 1
+  },
+  {
+    q: &quot;When did Rialo launch its testnet?&quot;,
+    options: [&quot;January 2025&quot;, &quot;September 2025&quot;, &quot;March 2026&quot;, &quot;December 2024&quot;],
+    answer: 1
+  }
+];
+
+let current = 0;
+let score = 0;
+let answered = false;
+
+const questionText = document.getElementById(&#x27;questionText&#x27;);
+const optionsArea = document.getElementById(&#x27;optionsArea&#x27;);
+const nextBtn = document.getElementById(&#x27;nextBtn&#x27;);
+const progressFill = document.getElementById(&#x27;progressFill&#x27;);
+const questionCounter = document.getElementById(&#x27;questionCounter&#x27;);
+const scoreCounter = document.getElementById(&#x27;scoreCounter&#x27;);
+const quizArea = document.getElementById(&#x27;quizArea&#x27;);
+const resultArea = document.getElementById(&#x27;resultArea&#x27;);
+const resultTitle = document.getElementById(&#x27;resultTitle&#x27;);
+const resultText = document.getElementById(&#x27;resultText&#x27;);
+const scoreEmoji = document.getElementById(&#x27;scoreEmoji&#x27;);
+const retryBtn = document.getElementById(&#x27;retryBtn&#x27;);
+
+function loadQuestion() {
+  answered = false;
+  const item = questions[current];
+  questionText.textContent = item.q;
+  optionsArea.innerHTML = &#x27;&#x27;;
+  item.options.forEach((opt, i) =&gt; {
+    const btn = document.createElement(&#x27;button&#x27;);
+    btn.className = &#x27;option&#x27;;
+    btn.textContent = opt;
+    btn.onclick = () =&gt; selectAnswer(i);
+    optionsArea.appendChild(btn);
+  });
+  nextBtn.style.display = &#x27;none&#x27;;
+  progressFill.style.width = ((current) / questions.length * 100) + &#x27;%&#x27;;
+  questionCounter.textContent = `Question ${current + 1}/${questions.length}`;
+  scoreCounter.textContent = `Score: ${score}`;
+}
+
+function selectAnswer(i) {
+  if (answered) return;
+  answered = true;
+  const item = questions[current];
+  const opts = optionsArea.querySelectorAll(&#x27;.option&#x27;);
+  opts.forEach((btn, idx) =&gt; {
+    btn.disabled = true;
+    if (idx === item.answer) btn.classList.add(&#x27;correct&#x27;);
+    else if (idx === i) btn.classList.add(&#x27;wrong&#x27;);
+  });
+  if (i === item.answer) score++;
+  scoreCounter.textContent = `Score: ${score}`;
+  nextBtn.style.display = &#x27;block&#x27;;
+  nextBtn.textContent = (current === questions.length - 1) ? &#x27;See Results&#x27; : &#x27;Next&#x27;;
+}
+
+nextBtn.onclick = () =&gt; {
+  current++;
+  if (current &lt; questions.length) {
+    loadQuestion();
+  } else {
+    showResult();
+  }
+};
+
+function showResult() {
+  progressFill.style.width = &#x27;100%&#x27;;
+  quizArea.style.display = &#x27;none&#x27;;
+  resultArea.style.display = &#x27;block&#x27;;
+  const pct = Math.round((score / questions.length) * 100);
+  if (pct &gt;= 80) {
+    scoreEmoji.textContent = &#x27;🏆&#x27;;
+    resultTitle.textContent = &#x27;Rialo Expert!&#x27;;
+  } else if (pct &gt;= 50) {
+    scoreEmoji.textContent = &#x27;👍&#x27;;
+    resultTitle.textContent = &#x27;Pretty Good!&#x27;;
+  } else {
+    scoreEmoji.textContent = &#x27;📚&#x27;;
+    resultTitle.textContent = &#x27;Keep Learning&#x27;;
+  }
+  resultText.textContent = `You got ${score} out of ${questions.length} correct (${pct}%).`;
+}
+
+retryBtn.onclick = () =&gt; {
+  current = 0;
+  score = 0;
+  quizArea.style.display = &#x27;block&#x27;;
+  resultArea.style.display = &#x27;none&#x27;;
+  loadQuestion();
+};
+
+loadQuestion();
+&lt;/script&gt;
+&lt;/body&gt;
+&lt;/html&gt;
+"></iframe></section>
 </div>
 <script>
 const canvas=document.getElementById('game');const ctx=canvas.getContext('2d');
@@ -1198,6 +1504,7 @@ function enter(id){
   if(id === "puzzle") title = "Rialo Puzzle";
   if(id === "snake") title = "Rialo Snake";
     if(id === "flappy") title = "Rialo Flappy";
+  if(id === "quiz") title = "Rialo Quiz";
   document.getElementById('headerTitle').textContent = title;
 }
 function backToMenu(){
@@ -1205,7 +1512,7 @@ function backToMenu(){
 }
   window.addEventListener('load', function () {
   var target = window.location.hash.replace('#', '');
-  var valid = ['card', 'puzzle', 'snake', 'flappy'];
+  var valid = ['card', 'puzzle', 'snake', 'flappy', 'quiz'];
   if (valid.includes(target) && typeof enter === 'function') {
     setTimeout(function () { enter(target); }, 600);
   }
