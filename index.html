@@ -1007,8 +1007,6 @@ sizeCanvas(); render();
     <div>Score: <span id="finalScore">0</span></div>
     <button id="startBtn" class="btn">▶ Start</button>
   </div>
-<section class="app" id="quiz"><iframe src="quiz.html"></iframe></section>
-    
 </div>
 <script>
 const canvas=document.getElementById('game');const ctx=canvas.getContext('2d');
@@ -1177,7 +1175,7 @@ if(!running){ctx.fillStyle='#fff';ctx.font='20px Orbitron';ctx.fillText('Press S
 logo.onload=()=>{fitCanvas();draw();};
 </script>
 </section>
-
+<section class="app" id="quiz"><iframe src="quiz.html"></iframe></section>
 <script>
 let f=document.getElementById('fill');let p=0;
 let timer=setInterval(()=>{
