@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rialo Quiz</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: radial-gradient(circle at top, #1a1024 0%, #0a0612 60%, #050308 100%);
+    color: #f3f0fa;
+    padding: 20px;
+  }
+  .card {
+    width: 100%;
+    max-width: 480px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(139,92,246,0.35);
+    border-radius: 20px;
+    padding: 28px 24px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 10px 40px rgba(139,92,246,0.15);
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.6rem;
+    margin: 0 0 4px;
+    background: linear-gradient(90deg, #a78bfa, #8b5cf6);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .subtitle {
+    text-align: center;
+    color: #b8aed6;
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+  .progress-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+  .question {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 18px;
+    line-height: 1.4;
+  }
+  .option {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 13px 16px;
+    margin-bottom: 10px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    color: #f3f0fa;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .option:hover:not(:disabled) {
+    background: rgba(139,92,246,0.2);
+    border-color: #8b5cf6;
+  }
+  .option.correct {
+    background: rgba(34,197,94,0.25);
+    border-color: #22c55e;
+  }
+  .option.wrong {
+    background: rgba(239,68,68,0.25);
+    border-color: #ef4444;
+  }
+  .option:disabled { cursor: default; opacity: 0.9; }
+  .footer-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: #b8aed6;
+  }
+  .next-btn {
+    display: none;
+    width: 100%;
+    margin-top: 16px;
+    padding: 13px;
+    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .next-btn:hover { opacity: 0.9; }
+  .result {
+    text-align: center;
+    display: none;
+  }
+  .result h2 {
+    font-size: 1.8rem;
+    margin-bottom: 6px;
+    color: #a78bfa;
+  }
+  .result p {
+    color: #cfc6e8;
+    margin-bottom: 20px;
+  }
+  .retry-btn {
+    padding: 13px 24px;
+    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+    border: none;
+    border-radius: 12px;
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .score-emoji { font-size: 3rem; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div class="card" id="quizCard">
+  <h1>Rialo Quiz</h1>
+  <p class="subtitle">How well do you know Rialo?</p>
+
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+  <div id="quizArea">
+    <div class="question" id="questionText"></div>
+    <div id="optionsArea"></div>
+    <button class="next-btn" id="nextBtn">Next</button>
+    <div class="footer-row">
+      <span id="questionCounter"></span>
+      <span id="scoreCounter"></span>
+    </div>
+  </div>
+
+  <div class="result" id="resultArea">
+    <div class="score-emoji" id="scoreEmoji">🏆</div>
+    <h2 id="resultTitle"></h2>
+    <p id="resultText"></p>
+    <button class="retry-btn" id="retryBtn">Play Again</button>
+  </div>
+</div>
+
+<script>
+const questions = [
+  {
+    q: "Which company developed Rialo?",
+    options: ["Subzero Labs", "Mysten Labs", "Alchemy Labs", "Pantera Labs"],
+    answer: 0
+  },
+  {
+    q: "Rialo is often described as what kind of blockchain?",
+    options: ["Gaming blockchain", "Real-world blockchain", "Privacy coin", "Meme chain"],
+    answer: 1
+  },
+  {
+    q: "What allows Rialo to avoid relying on traditional oracles?",
+    options: [
+      "Manual validators",
+      "Smart contracts can directly access real-time data via one-line HTTPS calls",
+      "All data is stored on a centralized server",
+      "It doesn't support smart contracts"
+    ],
+    answer: 1
+  },
+  {
+    q: "Rialo combines RISC-V smart contracts with compatibility for which VM?",
+    options: ["Ethereum VM", "Solana VM", "Bitcoin Script", "Cosmos SDK"],
+    answer: 1
+  },
+  {
+    q: "Who led Rialo's $20 million seed funding round?",
+    options: ["Coinbase Ventures", "Pantera Capital", "Variant", "Hashed"],
+    answer: 1
+  },
+  {
+    q: "What is the name of Rialo's feature that lets users log in with email, SMS, or social accounts?",
+    options: ["Real World Data", "Real World Identity", "Real World Privacy", "Real World Connectivity"],
+    answer: 1
+  },
+  {
+    q: "When did Rialo launch its testnet?",
+    options: ["January 2025", "September 2025", "March 2026", "December 2024"],
+    answer: 1
+  }
+];
+
+let current = 0;
+let score = 0;
+let answered = false;
+
+const questionText = document.getElementById('questionText');
+const optionsArea = document.getElementById('optionsArea');
+const nextBtn = document.getElementById('nextBtn');
+const progressFill = document.getElementById('progressFill');
+const questionCounter = document.getElementById('questionCounter');
+const scoreCounter = document.getElementById('scoreCounter');
+const quizArea = document.getElementById('quizArea');
+const resultArea = document.getElementById('resultArea');
+const resultTitle = document.getElementById('resultTitle');
+const resultText = document.getElementById('resultText');
+const scoreEmoji = document.getElementById('scoreEmoji');
+const retryBtn = document.getElementById('retryBtn');
+
+function loadQuestion() {
+  answered = false;
+  const item = questions[current];
+  questionText.textContent = item.q;
+  optionsArea.innerHTML = '';
+  item.options.forEach((opt, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'option';
+    btn.textContent = opt;
+    btn.onclick = () => selectAnswer(i);
+    optionsArea.appendChild(btn);
+  });
+  nextBtn.style.display = 'none';
+  progressFill.style.width = ((current) / questions.length * 100) + '%';
+  questionCounter.textContent = `Question ${current + 1}/${questions.length}`;
+  scoreCounter.textContent = `Score: ${score}`;
+}
+
+function selectAnswer(i) {
+  if (answered) return;
+  answered = true;
+  const item = questions[current];
+  const opts = optionsArea.querySelectorAll('.option');
+  opts.forEach((btn, idx) => {
+    btn.disabled = true;
+    if (idx === item.answer) btn.classList.add('correct');
+    else if (idx === i) btn.classList.add('wrong');
+  });
+  if (i === item.answer) score++;
+  scoreCounter.textContent = `Score: ${score}`;
+  nextBtn.style.display = 'block';
+  nextBtn.textContent = (current === questions.length - 1) ? 'See Results' : 'Next';
+}
+
+nextBtn.onclick = () => {
+  current++;
+  if (current < questions.length) {
+    loadQuestion();
+  } else {
+    showResult();
+  }
+};
+
+function showResult() {
+  progressFill.style.width = '100%';
+  quizArea.style.display = 'none';
+  resultArea.style.display = 'block';
+  const pct = Math.round((score / questions.length) * 100);
+  if (pct >= 80) {
+    scoreEmoji.textContent = '🏆';
+    resultTitle.textContent = 'Rialo Expert!';
+  } else if (pct >= 50) {
+    scoreEmoji.textContent = '👍';
+    resultTitle.textContent = 'Pretty Good!';
+  } else {
+    scoreEmoji.textContent = '📚';
+    resultTitle.textContent = 'Keep Learning';
+  }
+  resultText.textContent = `You got ${score} out of ${questions.length} correct (${pct}%).`;
+}
+
+retryBtn.onclick = () => {
+  current = 0;
+  score = 0;
+  quizArea.style.display = 'block';
+  resultArea.style.display = 'none';
+  loadQuestion();
+};
+
+loadQuestion();
+</script>
+</body>
+  </html>
