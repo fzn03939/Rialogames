@@ -279,8 +279,19 @@
     const [animGen, setAnimGen] = useState(0);
 
     const onSepolia = chainIdHex === SEPOLIA_CHAIN_ID_HEX;
-    const hasInjected = typeof window !== "undefined" && !!window.ethereum;
+    function getInjectedProvider() {
+  if (typeof window === "undefined") return null;
+  if (window.ethereum) return window.ethereum;
+  try {
+    if (window.parent && window.parent !== window && window.parent.ethereum) {
+      return window.parent.ethereum;
+    }
+  } catch (e) {}
+  return null;
+}
 
+const injectedProvider = getInjectedProvider();
+const hasInjected = !!injectedProvider;
     const betUnits = useMemo(() => {
       if (selectedTier === null || !betTiers[selectedTier]) return null;
       return betTiers[selectedTier];
@@ -291,13 +302,16 @@
     // ---------- Wallet connect ----------
     const connectWallet = useCallback(async () => {
       setError("");
-      if (!window.ethereum) {
-        setError("No wallet found. Open this page inside your wallet browser (e.g. Mises, MetaMask).");
-        return;
-      }
-      setConnecting(true);
-      try {
-        const p = new ethers.BrowserProvider(window.ethereum);
+      const eth = getInjectedProvider();
+if (!eth) {
+  setError("No wallet found. Open this page inside your wallet br...");
+  return;
+}
+
+setConnecting(true);
+try {
+  const p = new ethers.BrowserProvider(eth);
+        
         const accounts = await p.send("eth_requestAccounts", []);
         const net = await p.getNetwork();
         const s = await p.getSigner();
@@ -316,16 +330,17 @@
       setError("");
       setSwitching(true);
       try {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
-        });
+        const eth = getInjectedProvider();
+await eth.request({
+  method: "wallet_switchEthereumChain",
+  params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+});
       } catch (err) {
         if (err && err.code === 4902) {
           try {
-            await window.ethereum.request({
-              method: "wallet_addEthereumChain",
-              params: [{
+            await eth.request({
+  method: "wallet_addEthereumChain",
+  params: [{
                 chainId: SEPOLIA_CHAIN_ID_HEX,
                 chainName: "Sepolia",
                 rpcUrls: [RPC_URL],
@@ -359,9 +374,10 @@
     const disconnectWallet = useCallback(async () => {
       setError("");
       try {
-        if (window.ethereum && window.ethereum.request) {
+        const eth = getInjectedProvider();
+if (eth && eth.request) {
           try {
-            await window.ethereum.request({
+            await eth.request({
               method: "wallet_revokePermissions",
               params: [{ eth_accounts: {} }],
             });
@@ -383,7 +399,8 @@
 
     // React to account/network changes from the wallet itself
     useEffect(() => {
-      if (!window.ethereum) return;
+      const eth = getInjectedProvider();
+if (!eth) return;
       const onAccountsChanged = (accs) => {
         if (!accs || accs.length === 0) {
           setAccount(null); setSigner(null); setProvider(null);
@@ -394,11 +411,11 @@
       const onChainChanged = (hex) => {
         setChainIdHex(hex);
       };
-      window.ethereum.on && window.ethereum.on("accountsChanged", onAccountsChanged);
-      window.ethereum.on && window.ethereum.on("chainChanged", onChainChanged);
+      eth.on && eth.on("accountsChanged", onAccountsChanged);
+eth.on && eth.on("chainChanged", onChainChanged);
       return () => {
-        window.ethereum.removeListener && window.ethereum.removeListener("accountsChanged", onAccountsChanged);
-        window.ethereum.removeListener && window.ethereum.removeListener("chainChanged", onChainChanged);
+        eth.removeListener && eth.removeListener("accountsChanged", onAccountsChanged);
+eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
       };
     }, []);
 
