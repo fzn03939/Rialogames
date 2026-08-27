@@ -972,15 +972,8 @@ logo.onload=()=>{fitCanvas();draw();};
 <section class="app" id="quiz"><iframe src="quiz.html"></iframe></section>
   <section class="app" id="coinflip"><iframe src="Coinflip.html"></iframe></section>
 <script>
-let f=document.getElementById('fill');let p=0;
-let timer=setInterval(()=>{
-  p=Math.min(100,p+10);f.style.width=p+'%';
-  if(p>=100){clearInterval(timer);
-    setTimeout(()=>{document.getElementById('loading').style.display='none';
-    document.getElementById('menu').style.display='flex';},500);
-  }
-},200);
-
+document.getElementById('menu').style.display = 'flex';
+</script>
 function enter(id){
   document.getElementById('menu').style.display='none';
   document.getElementById('appHeader').style.display='flex';
