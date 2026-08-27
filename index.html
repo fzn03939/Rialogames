@@ -380,6 +380,7 @@ setTimeout(() => {
     <div class="card" onclick="enter('snake')"><h3>🐍 Rialo Snake</h3><p>Tap to play Snake.</p></div>
     <div class="card" onclick="enter('flappy')"><h3>🪐 Rialo Flappy</h3><p>Fly through the neon galaxy. Avoid obstacles and reach the highest score!</p></div>
     <div class="card" onclick="enter('quiz')"><h3>🧠 Rialo Quiz</h3><p>Test your Rialo knowledge!</p></div>
+    <div class="card" onclick="enter('coinflip')"><h3>🪙 Rialo CoinFlip</h3><p>Double or nothing dalam RIALO.</p></div>
   </div>
 </div>
 <header id="appHeader">
@@ -1176,6 +1177,7 @@ logo.onload=()=>{fitCanvas();draw();};
 </script>
 </section>
 <section class="app" id="quiz"><iframe src="quiz.html"></iframe></section>
+  <section class="app" id="coinflip"><iframe src="Coinflip.html"></iframe></section>
 <script>
 let f=document.getElementById('fill');let p=0;
 let timer=setInterval(()=>{
@@ -1199,6 +1201,7 @@ function enter(id){
   if(id === "snake") title = "Rialo Snake";
     if(id === "flappy") title = "Rialo Flappy";
   if(id === "quiz") title = "Rialo Quiz";
+  if(id === "Coinflip") title = "Rialo Coinflip";
   document.getElementById('headerTitle').textContent = title;
 }
 function backToMenu(){
@@ -1206,7 +1209,7 @@ function backToMenu(){
 }
   window.addEventListener('load', function () {
   var target = window.location.hash.replace('#', '');
-  var valid = ['card', 'puzzle', 'snake', 'flappy', 'quiz'];
+  var valid = ['card', 'puzzle', 'snake', 'flappy', 'quiz', 'coinflip'];
   if (valid.includes(target) && typeof enter === 'function') {
     setTimeout(function () { enter(target); }, 600);
   }
