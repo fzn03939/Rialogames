@@ -973,7 +973,7 @@ logo.onload=()=>{fitCanvas();draw();};
   <section class="app" id="coinflip"><iframe src="Coinflip.html"></iframe></section>
 <script>
 document.getElementById('menu').style.display = 'flex';
-</script>
+
 function enter(id){
   document.getElementById('menu').style.display='none';
   document.getElementById('appHeader').style.display='flex';
@@ -985,15 +985,17 @@ function enter(id){
   if(id === "card") title = "Rialo Card";
   if(id === "puzzle") title = "Rialo Puzzle";
   if(id === "snake") title = "Rialo Snake";
-    if(id === "flappy") title = "Rialo Flappy";
+  if(id === "flappy") title = "Rialo Flappy";
   if(id === "quiz") title = "Rialo Quiz";
   if(id === "coinflip") title = "Rialo CoinFlip";
   document.getElementById('headerTitle').textContent = title;
 }
+
 function backToMenu(){
   window.history.back();
 }
-  window.addEventListener('load', function () {
+
+window.addEventListener('load', function () {
   var target = window.location.hash.replace('#', '');
   var valid = ['card', 'puzzle', 'snake', 'flappy', 'quiz', 'coinflip'];
   if (valid.includes(target) && typeof enter === 'function') {
