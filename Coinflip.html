@@ -10,14 +10,19 @@
 <style>
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body {
-    font-family: system-ui, sans-serif;
-    background: radial-gradient(120% 140% at 50% -10%, #ffffff 0%, #f4f6f5 55%, #eef1f0 100%);
-    min-height: 100%;
-    color: #0A0D0C;
-  }
-  .display { font-family: "Space Grotesk", system-ui, sans-serif; }
-  #root { min-height: 100%; }
+      body {
+        font-family: system-ui, sans-serif;
+        background: radial-gradient(120% 140% at 50% -10%, #ffffff 0%, #f4f6f5 55%, #eef1f0 100%);
+        min-height: 100%;
+        color: #0A0D0C;
+        display: flex;
+        flex-direction: column;
+      }
+      .display { font-family: "Space Grotesk", system-ui, sans-serif; }
+      #root { flex: 1; }
+      .app-footer { padding: 24px; text-align: center; }
+      .app-footer img { width: 24px; height: 24px; margin: 0 auto 8px; display: block; }
+      .app-footer .footer-sub { color: rgba(10,13,12,0.45); font-size: 12px; }
 
   @keyframes floatGlow {
     0%, 100% { transform: translateY(0px); opacity: .55; }
@@ -45,6 +50,13 @@
     Loading CoinFlip…
   </div>
 </div>
+ <footer class="app-footer">
+  <img src="icon-app.svg" alt="Rialo" onerror="this.style.display='none';">
+  <p>
+    <span>© 2026 ComHub.</span><br>
+    <span class="footer-sub">Powered by ComHub</span>
+  </p>
+</footer>
 
 <!-- Dipindah dari unpkg.com ke jsdelivr: unpkg cukup sering lambat/di-rate-limit
      dan kalau gagal load, halaman jadi blank tanpa pesan error apa pun. -->
