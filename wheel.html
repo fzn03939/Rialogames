@@ -56,12 +56,9 @@
 <body class="min-h-screen flex flex-col dark-mode" id="body">
 
 <header class="glass pl-3 pr-3 py-2 flex justify-between items-center sticky top-0 z-20">
-  <a href="index.html" class="flex items-center gap-2">
-    <img src="icon-app.svg" class="h-8 logo-glow" alt="Rialo Wheel logo">
-    <span class="font-bold text-lg">Rialo Wheel</span>
-  </a>
+  <span class="font-bold text-lg">Rialo Wheel</span>
   <div class="flex gap-2 items-center">
-    <a href="index.html" class="chip">Home</a>
+    <a href="https://www.comhub.my.id/games" class="chip">Back</a>
     <button onclick="toggleMode()" class="chip" id="modeToggle">☀️</button>
   </div>
 </header>
@@ -334,6 +331,7 @@
       try { return ethers.parseUnits(betAmount, decimals); } catch { return null; }
     }, [betAmount, decimals]);
 
+    // Cukup approve sekali: cek terhadap allowance yang sudah ada, bukan approve ulang tiap bet
     const needsApproval = betAmountWei !== null && allowance < betAmountWei;
 
     const applyQuickBet = (multiplierOfMin) => {
@@ -348,12 +346,14 @@
     };
 
     const doApprove = async () => {
-      if (!signer || !betAmountWei) return;
+      if (!signer) return;
       setLoading(true);
       setStatus({ type: "info", text: "Approving RIALO, confirm in your wallet..." });
       try {
         const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
-        const tx = await token.approve(WHEEL_CONTRACT_ADDRESS, betAmountWei);
+        // Approve unlimited (MaxUint256) sekali di awal, jadi spin selanjutnya
+        // tidak perlu approve lagi — tinggal connect wallet lalu spin.
+        const tx = await token.approve(WHEEL_CONTRACT_ADDRESS, ethers.MaxUint256);
         setStatus({ type: "info", text: "Waiting for approval confirmation...", hash: tx.hash });
         await tx.wait();
         setStatus({ type: "success", text: "Approved! You can spin now." });
