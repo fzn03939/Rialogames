@@ -21,30 +21,22 @@
     flex-direction: column;
     transition: background 0.3s, color 0.3s;
   }
-  .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); }
-  .light-mode .glass { background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); }
+  .glass { background: rgba(0,0,0,0.05); backdrop-filter: blur(8px); border: 1px solid rgba(0,0,0,0.1); }
 
   .chip {
-    background: #ffffff;
-    color: #000000;
-    border: 1px solid #ffffff;
+    background: #000000;
+    color: #ffffff;
+    border: 1px solid #000000;
     border-radius: 999px;
     padding: .3rem .9rem;
     cursor: pointer;
     font-size: .85rem;
   }
-  .light-mode .chip {
-    background: #000000;
-    color: #ffffff;
-    border: 1px solid #000000;
-  }
 
   .logo-glow { filter: drop-shadow(0 0 10px rgba(201,168,118,0.9)) drop-shadow(0 0 30px rgba(201,168,118,0.55)); }
 
-  .dark-mode { background: #05060a; color: #e5e7eb; }
-  .light-mode { background: #f9fafb; color: #111827; }
-  .footer-sub { color: #9ca3af; }
-  .light-mode .footer-sub { color: #4b5563; }
+  body { background: #f9fafb; color: #111827; }
+  .footer-sub { color: #4b5563; }
 
   @keyframes pulse-win {
     0%, 100% { box-shadow: 0 0 0 0 rgba(94,234,212,0.6); }
@@ -53,13 +45,12 @@
   .win-pulse { animation: pulse-win 1s ease-out 2; }
 </style>
 </head>
-<body class="min-h-screen flex flex-col dark-mode" id="body">
+<body class="min-h-screen flex flex-col" id="body">
 
 <header class="glass pl-3 pr-3 py-2 flex justify-between items-center sticky top-0 z-20">
   <span class="font-bold text-lg">Rialo Wheel</span>
   <div class="flex gap-2 items-center">
     <a href="https://www.comhub.my.id/games" class="chip">Back</a>
-    <button onclick="toggleMode()" class="chip" id="modeToggle">☀️</button>
   </div>
 </header>
 
@@ -74,21 +65,6 @@
     <span class="footer-sub text-xs">Powered by ComHub — Testnet Sepolia only, tokens have no real value</span>
   </p>
 </footer>
-
-<script>
-  function toggleMode(){
-    const body = document.getElementById("body");
-    if(body.classList.contains("dark-mode")){
-      body.classList.remove("dark-mode");
-      body.classList.add("light-mode");
-      document.getElementById("modeToggle").innerText = "🌙";
-    } else {
-      body.classList.remove("light-mode");
-      body.classList.add("dark-mode");
-      document.getElementById("modeToggle").innerText = "☀️";
-    }
-  }
-</script>
 
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -133,17 +109,18 @@
   const SEGMENT_ANGLE = 360 / SEGMENTS.length;
 
   const c = {
-    panel: "#0E1211",
-    field: "#101413",
-    card: "#161B1A",
-    border: "rgba(255,255,255,0.08)",
-    borderSoft: "rgba(255,255,255,0.05)",
-    textFaint: "rgba(255,255,255,0.25)",
-    textMuted: "rgba(255,255,255,0.55)",
-    mint: "#5EEAD4",
-    mintBorder: "rgba(45,212,191,0.3)",
-    mintBg: "rgba(45,212,191,0.1)",
-    danger: "#F87171",
+    panel: "#ffffff",
+    field: "#f3f4f6",
+    card: "#ffffff",
+    border: "rgba(0,0,0,0.1)",
+    borderSoft: "rgba(0,0,0,0.06)",
+    textFaint: "rgba(17,24,39,0.4)",
+    textMuted: "rgba(17,24,39,0.65)",
+    text: "#111827",
+    mint: "#0D9488",
+    mintBorder: "rgba(13,148,136,0.3)",
+    mintBg: "rgba(13,148,136,0.1)",
+    danger: "#DC2626",
   };
 
   function IconWallet({ size = 16, color = "#fff" }) {
@@ -466,7 +443,7 @@
     return (
       <div style={{ width: "100%", maxWidth: 980, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: c.text, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
             ✨ RIALO WHEEL ✨
           </h1>
           <p style={{ color: c.textMuted, fontSize: 13, marginTop: 4 }}>Spin to win — Sepolia testnet, powered by your RIALO token</p>
@@ -479,7 +456,7 @@
                 onClick={() => setWalletMenuOpen(v => !v)}
                 style={{
                   fontSize: 11, fontFamily: "monospace", color: c.textMuted,
-                  background: "rgba(255,255,255,0.05)", border: `1px solid ${c.borderSoft}`,
+                  background: "rgba(0,0,0,0.04)", border: `1px solid ${c.borderSoft}`,
                   padding: "6px 12px 6px 10px", borderRadius: 999, cursor: "pointer",
                   display: "flex", alignItems: "center", gap: 6,
                 }}>
@@ -506,7 +483,7 @@
               )}
             </div>
           ) : (
-            <span style={{ fontSize: 11, fontFamily: "monospace", color: c.textFaint, background: "rgba(255,255,255,0.04)", border: `1px solid ${c.borderSoft}`, padding: "6px 12px", borderRadius: 999 }}>
+            <span style={{ fontSize: 11, fontFamily: "monospace", color: c.textFaint, background: "rgba(0,0,0,0.03)", border: `1px solid ${c.borderSoft}`, padding: "6px 12px", borderRadius: 999 }}>
               Not connected
             </span>
           )}
@@ -523,7 +500,7 @@
               <input
                 type="number" inputMode="decimal" placeholder="0.0" value={betAmount}
                 onChange={(e) => setBetAmount(e.target.value)}
-                style={{ background: "transparent", outline: "none", border: "none", fontSize: 22, fontWeight: 600, color: "#fff", width: "100%" }} />
+                style={{ background: "transparent", outline: "none", border: "none", fontSize: 22, fontWeight: 600, color: c.text, width: "100%" }} />
               <span style={{ fontSize: 13, fontWeight: 600, color: c.textMuted }}>{TOKEN_SYMBOL}</span>
             </div>
             {minBet !== null && maxBet !== null && (
@@ -538,7 +515,7 @@
                   style={{
                     flex: 1, textAlign: "center", padding: "7px 0", borderRadius: 10, fontSize: 11.5,
                     fontWeight: 600, fontFamily: "monospace", border: `1px solid ${c.borderSoft}`,
-                    color: c.mint, background: "rgba(255,255,255,0.03)", cursor: minBet ? "pointer" : "not-allowed",
+                    color: c.mint, background: "rgba(0,0,0,0.02)", cursor: minBet ? "pointer" : "not-allowed",
                   }}>
                   {mult}x min
                 </button>
@@ -665,7 +642,7 @@
 
         {/* Riwayat */}
         <div style={{ marginTop: 24, borderRadius: 24, border: `1px solid ${c.border}`, backgroundColor: c.panel, padding: 20 }}>
-          <p style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 12 }}>Your Recent Spins</p>
+          <p style={{ fontSize: 13, fontWeight: 700, color: c.text, marginBottom: 12 }}>Your Recent Spins</p>
           {!account ? (
             <p style={{ fontSize: 12, color: c.textFaint }}>Connect your wallet to see your spin history.</p>
           ) : history.length === 0 ? (
@@ -676,7 +653,7 @@
                 const mult = Number(h.multiplierBps) / 1000;
                 const won = mult > 0;
                 return (
-                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 8px", borderRadius: 8, background: "rgba(255,255,255,0.03)" }}>
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 8px", borderRadius: 8, background: "rgba(0,0,0,0.03)" }}>
                     <span style={{ color: c.textMuted }}>Bet {ethers.formatUnits(h.betAmount, decimals)} {TOKEN_SYMBOL}</span>
                     <span style={{ color: won ? c.mint : c.danger, fontWeight: 700 }}>
                       {won ? `${mult}x → +${ethers.formatUnits(h.payout, decimals)}` : "LOSE"}
