@@ -374,7 +374,14 @@
         const wheel = new ethers.Contract(WHEEL_CONTRACT_ADDRESS, WHEEL_ABI, signer);
         const tx = await wheel.spin(betAmountWei);
         setStatus({ type: "info", text: "Waiting for the result on-chain...", hash: tx.hash });
-        const receipt = await tx.wait();
+        const receipt = await Promise.any([
+  tx.wait(),
+  readProvider.waitForTransaction(tx.hash, 1, 90000),
+]);
+
+if (!receipt) {
+  throw new Error("Timeout menunggu konfirmasi. Cek tx di explorer lalu refresh.");
+}
 
         // Ambil hasil dari event Spun
         let multiplierBps = 0;
