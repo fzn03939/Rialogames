@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rialo Wheel — Spin to Win</title>
+
+<link rel="icon" type="image/svg+xml" href="https://comhub-us.vercel.app/icon-app.svg">
+
+<meta property="og:title" content="Rialo Wheel">
+<meta property="og:description" content="Spin to win with your RIALO tokens on Sepolia testnet.">
+<meta property="og:type" content="website">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { height: 100%; }
+  body {
+    font-family: system-ui, sans-serif;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: background 0.3s, color 0.3s;
+  }
+  .glass { background: rgba(255,255,255,0.05); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); }
+  .light-mode .glass { background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.1); }
+
+  .chip {
+    background: #ffffff;
+    color: #000000;
+    border: 1px solid #ffffff;
+    border-radius: 999px;
+    padding: .3rem .9rem;
+    cursor: pointer;
+    font-size: .85rem;
+  }
+  .light-mode .chip {
+    background: #000000;
+    color: #ffffff;
+    border: 1px solid #000000;
+  }
+
+  .logo-glow { filter: drop-shadow(0 0 10px rgba(201,168,118,0.9)) drop-shadow(0 0 30px rgba(201,168,118,0.55)); }
+
+  .dark-mode { background: #05060a; color: #e5e7eb; }
+  .light-mode { background: #f9fafb; color: #111827; }
+  .footer-sub { color: #9ca3af; }
+  .light-mode .footer-sub { color: #4b5563; }
+
+  @keyframes pulse-win {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(94,234,212,0.6); }
+    50% { box-shadow: 0 0 0 14px rgba(94,234,212,0); }
+  }
+  .win-pulse { animation: pulse-win 1s ease-out 2; }
+</style>
+</head>
+<body class="min-h-screen flex flex-col dark-mode" id="body">
+
+<header class="glass pl-3 pr-3 py-2 flex justify-between items-center sticky top-0 z-20">
+  <a href="index.html" class="flex items-center gap-2">
+    <img src="icon-app.svg" class="h-8 logo-glow" alt="Rialo Wheel logo">
+    <span class="font-bold text-lg">Rialo Wheel</span>
+  </a>
+  <div class="flex gap-2 items-center">
+    <a href="index.html" class="chip">Home</a>
+    <button onclick="toggleMode()" class="chip" id="modeToggle">☀️</button>
+  </div>
+</header>
+
+<main class="flex-1 flex items-center justify-center px-4 py-10">
+  <div id="wheel-root" class="w-full"></div>
+</main>
+
+<footer class="p-6 text-center mt-auto">
+  <img src="icon-app.svg" class="w-6 h-6 mx-auto logo-glow mb-2" alt="Rialo">
+  <p>
+    <span>© 2026 ComHub.</span><br>
+    <span class="footer-sub text-xs">Powered by ComHub — Testnet Sepolia only, tokens have no real value</span>
+  </p>
+</footer>
+
+<script>
+  function toggleMode(){
+    const body = document.getElementById("body");
+    if(body.classList.contains("dark-mode")){
+      body.classList.remove("dark-mode");
+      body.classList.add("light-mode");
+      document.getElementById("modeToggle").innerText = "🌙";
+    } else {
+      body.classList.remove("light-mode");
+      body.classList.add("dark-mode");
+      document.getElementById("modeToggle").innerText = "☀️";
+    }
+  }
+</script>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.9.0/ethers.umd.min.js"></script>
+
+<script type="text/babel">
+  // @ts-nocheck
+  const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+  const WHEEL_CONTRACT_ADDRESS = "0xE608973471c5489d00d80bf3Ac7A5De46D1e8c46";
+  const TOKEN_ADDRESS          = "0x12934cb5e37e1eeec80e889df7614febe312ecd9";
+  const TOKEN_SYMBOL           = "RIALO";
+  const SEPOLIA_CHAIN_ID_HEX   = "0xaa36a7"; // 11155111
+  const RPC_URL                = "https://ethereum-sepolia-rpc.publicnode.com";
+
+  const WHEEL_ABI = [
+    "function spin(uint256 amount) external returns (uint16 multiplierBps, uint256 payout)",
+    "function minBet() view returns (uint256)",
+    "function maxBet() view returns (uint256)",
+    "function paused() view returns (bool)",
+    "function getPoolBalance() view returns (uint256)",
+    "function getPlayerHistory(address player) view returns (tuple(address player, uint256 betAmount, uint16 multiplierBps, uint256 payout, uint256 timestamp)[])",
+    "event Spun(address indexed player, uint256 betAmount, uint16 multiplierBps, uint256 payout, uint256 indexed historyId)"
+  ];
+
+  const ERC20_ABI = [
+    "function balanceOf(address account) external view returns (uint256)",
+    "function approve(address spender, uint256 amount) external returns (bool)",
+    "function allowance(address owner, address spender) external view returns (uint256)",
+    "function decimals() external view returns (uint8)"
+  ];
+
+  // Urutan segmen roda searah jarum jam, mulai dari atas (0 derajat)
+  const SEGMENTS = [
+    { label: "5x",   multiplierBps: 5000,  color: "#F2B705", chance: "8%" },
+    { label: "10x",  multiplierBps: 10000, color: "#FB923C", chance: "2%" },
+    { label: "1.5x", multiplierBps: 1500,  color: "#F87171", chance: "30%" },
+    { label: "LOSE", multiplierBps: 0,     color: "#4B5563", chance: "35%" },
+    { label: "2x",   multiplierBps: 2000,  color: "#60A5FA", chance: "25%" },
+  ];
+  const SEGMENT_ANGLE = 360 / SEGMENTS.length;
+
+  const c = {
+    panel: "#0E1211",
+    field: "#101413",
+    card: "#161B1A",
+    border: "rgba(255,255,255,0.08)",
+    borderSoft: "rgba(255,255,255,0.05)",
+    textFaint: "rgba(255,255,255,0.25)",
+    textMuted: "rgba(255,255,255,0.55)",
+    mint: "#5EEAD4",
+    mintBorder: "rgba(45,212,191,0.3)",
+    mintBg: "rgba(45,212,191,0.1)",
+    danger: "#F87171",
+  };
+
+  function IconWallet({ size = 16, color = "#fff" }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 12V7H5a2 2 0 0 1 0-4h14v4" /><path d="M3 5v14a2 2 0 0 0 2 2h16v-5" /><path d="M18 12a2 2 0 0 0 0 4h4v-4Z" />
+      </svg>
+    );
+  }
+  function IconChevronDown({ size = 12, color = "#fff" }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="m6 9 6 6 6-6" />
+      </svg>
+    );
+  }
+  function IconLogOut({ size = 14, color = "#fff" }) {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" />
+      </svg>
+    );
+  }
+
+  // Bikin conic-gradient buat visual roda dari data SEGMENTS
+  function buildWheelGradient() {
+    const stops = [];
+    SEGMENTS.forEach((seg, i) => {
+      const start = i * SEGMENT_ANGLE;
+      const end = start + SEGMENT_ANGLE;
+      stops.push(`${seg.color} ${start}deg ${end}deg`);
+    });
+    return `conic-gradient(${stops.join(", ")})`;
+  }
+
+  function pickSegmentIndex(multiplierBps) {
+    let idx = SEGMENTS.findIndex(s => s.multiplierBps === multiplierBps);
+    if (idx === -1) idx = 0;
+    return idx;
+  }
+
+  function RialoWheelGame() {
+    const [provider, setProvider] = useState(null);
+    const [signer, setSigner] = useState(null);
+    const [account, setAccount] = useState(null);
+    const [chainIdHex, setChainIdHex] = useState(null);
+    const [tokenBalance, setTokenBalance] = useState("0");
+    const [decimals, setDecimals] = useState(18);
+    const [allowance, setAllowance] = useState(0n);
+    const [minBet, setMinBet] = useState(null);
+    const [maxBet, setMaxBet] = useState(null);
+    const [poolBalance, setPoolBalance] = useState(null);
+    const [gamePaused, setGamePaused] = useState(false);
+
+    const [betAmount, setBetAmount] = useState("");
+    const [loading, setLoading] = useState(false);
+    const [status, setStatus] = useState(null);
+    const [walletMenuOpen, setWalletMenuOpen] = useState(false);
+
+    const [rotation, setRotation] = useState(0);
+    const [spinning, setSpinning] = useState(false);
+    const [lastResult, setLastResult] = useState(null); // { multiplierBps, payout, betAmount }
+    const [history, setHistory] = useState([]);
+
+    const onSepolia = chainIdHex === SEPOLIA_CHAIN_ID_HEX;
+    const readProvider = useMemo(() => new ethers.JsonRpcProvider(RPC_URL), []);
+
+    const connectWallet = useCallback(async () => {
+      if (!window.ethereum) {
+        setStatus({ type: "error", text: "Wallet not detected. Open this page in a browser with MetaMask (or the MetaMask app on mobile)." });
+        return;
+      }
+      try {
+        setLoading(true);
+        const browserProvider = new ethers.BrowserProvider(window.ethereum, "any");
+        await browserProvider.send("eth_requestAccounts", []);
+        const network = await browserProvider.getNetwork();
+        const s = await browserProvider.getSigner();
+        const addr = await s.getAddress();
+
+        setProvider(browserProvider);
+        setSigner(s);
+        setAccount(addr);
+        setChainIdHex("0x" + network.chainId.toString(16));
+        setStatus(null);
+      } catch (err) {
+        setStatus({ type: "error", text: "Failed to connect: " + (err.shortMessage || err.message) });
+      } finally {
+        setLoading(false);
+      }
+    }, []);
+
+    const switchToSepolia = useCallback(async () => {
+      if (!window.ethereum) return;
+      try {
+        setLoading(true);
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+        });
+        setChainIdHex(SEPOLIA_CHAIN_ID_HEX);
+        setStatus(null);
+      } catch (err) {
+        setStatus({ type: "error", text: "Failed to switch network: " + (err.shortMessage || err.message) });
+      } finally {
+        setLoading(false);
+      }
+    }, []);
+
+    const disconnectWallet = useCallback(async () => {
+      try {
+        await window.ethereum?.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }],
+        });
+      } catch (err) {
+        // wallet doesn't support revoke — reset local state anyway
+      }
+      setProvider(null);
+      setSigner(null);
+      setAccount(null);
+      setChainIdHex(null);
+      setStatus(null);
+    }, []);
+
+    useEffect(() => {
+      if (!window.ethereum) return;
+      const handleAccountsChanged = (accounts) => {
+        if (!accounts || accounts.length === 0) {
+          setProvider(null); setSigner(null); setAccount(null); setChainIdHex(null); setStatus(null);
+        } else {
+          connectWallet();
+        }
+      };
+      const handleChainChanged = () => { if (account) connectWallet(); };
+      window.ethereum.on?.("accountsChanged", handleAccountsChanged);
+      window.ethereum.on?.("chainChanged", handleChainChanged);
+      return () => {
+        window.ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
+        window.ethereum.removeListener?.("chainChanged", handleChainChanged);
+      };
+    }, [account, connectWallet]);
+
+    const refreshData = useCallback(async () => {
+      try {
+        const wheel = new ethers.Contract(WHEEL_CONTRACT_ADDRESS, WHEEL_ABI, readProvider);
+        const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, readProvider);
+
+        const [dec, mn, mx, pool, isPaused] = await Promise.all([
+          token.decimals(),
+          wheel.minBet(),
+          wheel.maxBet(),
+          wheel.getPoolBalance(),
+          wheel.paused(),
+        ]);
+        setDecimals(Number(dec));
+        setMinBet(mn);
+        setMaxBet(mx);
+        setPoolBalance(pool);
+        setGamePaused(isPaused);
+
+        if (account) {
+          const [bal, allow, hist] = await Promise.all([
+            token.balanceOf(account),
+            token.allowance(account, WHEEL_CONTRACT_ADDRESS),
+            wheel.getPlayerHistory(account),
+          ]);
+          setTokenBalance(ethers.formatUnits(bal, dec));
+          setAllowance(allow);
+          setHistory([...hist].reverse().slice(0, 8));
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }, [readProvider, account]);
+
+    useEffect(() => { refreshData(); }, [refreshData]);
+    useEffect(() => {
+      const id = setInterval(refreshData, 15000);
+      return () => clearInterval(id);
+    }, [refreshData]);
+
+    const betAmountWei = useMemo(() => {
+      if (!betAmount) return null;
+      try { return ethers.parseUnits(betAmount, decimals); } catch { return null; }
+    }, [betAmount, decimals]);
+
+    const needsApproval = betAmountWei !== null && allowance < betAmountWei;
+
+    const applyQuickBet = (multiplierOfMin) => {
+      if (!minBet) return;
+      const amt = (minBet * BigInt(multiplierOfMin));
+      setBetAmount(ethers.formatUnits(amt, decimals));
+    };
+
+    const applyMax = () => {
+      if (!maxBet) return;
+      setBetAmount(ethers.formatUnits(maxBet, decimals));
+    };
+
+    const doApprove = async () => {
+      if (!signer || !betAmountWei) return;
+      setLoading(true);
+      setStatus({ type: "info", text: "Approving RIALO, confirm in your wallet..." });
+      try {
+        const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
+        const tx = await token.approve(WHEEL_CONTRACT_ADDRESS, betAmountWei);
+        setStatus({ type: "info", text: "Waiting for approval confirmation...", hash: tx.hash });
+        await tx.wait();
+        setStatus({ type: "success", text: "Approved! You can spin now." });
+        refreshData();
+      } catch (err) {
+        setStatus({ type: "error", text: "Approve failed: " + (err.shortMessage || err.message || "unknown error") });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const doSpin = async () => {
+      if (!signer || !betAmountWei) return;
+      if (minBet !== null && betAmountWei < minBet) {
+        setStatus({ type: "error", text: `Bet is below the minimum (${ethers.formatUnits(minBet, decimals)} ${TOKEN_SYMBOL}).` });
+        return;
+      }
+      if (maxBet !== null && betAmountWei > maxBet) {
+        setStatus({ type: "error", text: `Bet is above the maximum (${ethers.formatUnits(maxBet, decimals)} ${TOKEN_SYMBOL}).` });
+        return;
+      }
+      setLoading(true);
+      setLastResult(null);
+      setStatus({ type: "info", text: "Spinning the wheel, confirm in your wallet..." });
+      try {
+        const wheel = new ethers.Contract(WHEEL_CONTRACT_ADDRESS, WHEEL_ABI, signer);
+        const tx = await wheel.spin(betAmountWei);
+        setStatus({ type: "info", text: "Waiting for the result on-chain...", hash: tx.hash });
+        const receipt = await tx.wait();
+
+        // Ambil hasil dari event Spun
+        let multiplierBps = 0;
+        let payout = 0n;
+        for (const log of receipt.logs) {
+          try {
+            const parsed = wheel.interface.parseLog(log);
+            if (parsed && parsed.name === "Spun") {
+              multiplierBps = Number(parsed.args.multiplierBps);
+              payout = parsed.args.payout;
+              break;
+            }
+          } catch { /* bukan log dari kontrak ini, lewati */ }
+        }
+
+        animateToResult(multiplierBps);
+        setLastResult({ multiplierBps, payout, betAmount: betAmountWei });
+
+        setTimeout(() => {
+          if (multiplierBps > 0) {
+            setStatus({ type: "success", text: `You won ${ethers.formatUnits(payout, decimals)} ${TOKEN_SYMBOL}!`, hash: tx.hash });
+          } else {
+            setStatus({ type: "error", text: "No luck this time. Give it another spin!", hash: tx.hash });
+          }
+          refreshData();
+        }, 4200);
+      } catch (err) {
+        setStatus({ type: "error", text: "Spin failed: " + (err.shortMessage || err.message || "unknown error") });
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const animateToResult = (multiplierBps) => {
+      setSpinning(true);
+      const segIdx = pickSegmentIndex(multiplierBps);
+      const segCenter = segIdx * SEGMENT_ANGLE + SEGMENT_ANGLE / 2;
+      const jitter = (Math.random() - 0.5) * (SEGMENT_ANGLE * 0.5);
+      const targetMod = ((360 - (segCenter + jitter)) % 360 + 360) % 360;
+
+      const extraSpins = 6;
+      setRotation(prev => {
+        let next = prev + extraSpins * 360;
+        next = next - (next % 360) + targetMod;
+        if (next <= prev) next += 360;
+        return next;
+      });
+
+      setTimeout(() => setSpinning(false), 4000);
+    };
+
+    const buttonLabel = !account
+      ? "Connect Wallet"
+      : !onSepolia
+      ? "Switch to Sepolia first"
+      : gamePaused
+      ? "Game is paused"
+      : !betAmount
+      ? "Enter a bet amount"
+      : needsApproval
+      ? `Approve ${TOKEN_SYMBOL}`
+      : loading
+      ? "Processing..."
+      : "SPIN TO WIN!";
+
+    const statusColors = {
+      info: { bg: "rgba(139,127,255,0.1)", color: "#B4ACFF", border: "rgba(139,127,255,0.25)" },
+      error: { bg: "rgba(248,113,113,0.1)", color: c.danger, border: "rgba(248,113,113,0.25)" },
+      success: { bg: c.mintBg, color: c.mint, border: c.mintBorder },
+    };
+
+    const handleMainButton = () => {
+      if (!account) return connectWallet();
+      if (!onSepolia) return switchToSepolia();
+      if (needsApproval) return doApprove();
+      return doSpin();
+    };
+
+    const mainButtonDisabled = loading || spinning || (account && onSepolia && !gamePaused && !betAmount);
+
+    return (
+      <div style={{ width: "100%", maxWidth: 980, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            ✨ RIALO WHEEL ✨
+          </h1>
+          <p style={{ color: c.textMuted, fontSize: 13, marginTop: 4 }}>Spin to win — Sepolia testnet, powered by your RIALO token</p>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+          {account ? (
+            <div style={{ position: "relative" }}>
+              <button
+                onClick={() => setWalletMenuOpen(v => !v)}
+                style={{
+                  fontSize: 11, fontFamily: "monospace", color: c.textMuted,
+                  background: "rgba(255,255,255,0.05)", border: `1px solid ${c.borderSoft}`,
+                  padding: "6px 12px 6px 10px", borderRadius: 999, cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 6,
+                }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.mint, boxShadow: "0 0 5px rgba(94,234,212,0.7)" }} />
+                {account.slice(0, 6)}...{account.slice(-4)}
+                <IconChevronDown size={10} color={c.textFaint} />
+              </button>
+              {walletMenuOpen && (
+                <React.Fragment>
+                  <div onClick={() => setWalletMenuOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 29 }} />
+                  <div style={{
+                    position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 30, minWidth: 160,
+                    backgroundColor: c.card, border: `1px solid ${c.border}`, borderRadius: 12,
+                    overflow: "hidden", boxShadow: "0 12px 30px rgba(0,0,0,0.45)",
+                  }}>
+                    <div style={{ padding: "8px 12px", fontSize: 9, color: c.textFaint, borderBottom: `1px solid ${c.borderSoft}` }}>{account}</div>
+                    <button
+                      onClick={() => { setWalletMenuOpen(false); disconnectWallet(); }}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", background: "transparent", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: c.danger, textAlign: "left" }}>
+                      <IconLogOut size={14} color={c.danger} /> Disconnect
+                    </button>
+                  </div>
+                </React.Fragment>
+              )}
+            </div>
+          ) : (
+            <span style={{ fontSize: 11, fontFamily: "monospace", color: c.textFaint, background: "rgba(255,255,255,0.04)", border: `1px solid ${c.borderSoft}`, padding: "6px 12px", borderRadius: 999 }}>
+              Not connected
+            </span>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }} className="md:grid-cols-[380px_1fr]">
+          {/* Panel kiri: taruhan */}
+          <div style={{ borderRadius: 24, border: `1px solid ${c.border}`, backgroundColor: c.panel, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: c.textMuted }}>
+              <span>Bet Amount</span>
+              <span>Balance: {Number(tokenBalance).toLocaleString(undefined, { maximumFractionDigits: 2 })} {TOKEN_SYMBOL}</span>
+            </div>
+            <div style={{ borderRadius: 16, backgroundColor: c.field, border: `1px solid ${c.borderSoft}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+              <input
+                type="number" inputMode="decimal" placeholder="0.0" value={betAmount}
+                onChange={(e) => setBetAmount(e.target.value)}
+                style={{ background: "transparent", outline: "none", border: "none", fontSize: 22, fontWeight: 600, color: "#fff", width: "100%" }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: c.textMuted }}>{TOKEN_SYMBOL}</span>
+            </div>
+            {minBet !== null && maxBet !== null && (
+              <p style={{ fontSize: 10.5, color: c.textFaint }}>
+                Min: {ethers.formatUnits(minBet, decimals)} {TOKEN_SYMBOL} • Max: {ethers.formatUnits(maxBet, decimals)} {TOKEN_SYMBOL}
+              </p>
+            )}
+
+            <div style={{ display: "flex", gap: 6 }}>
+              {[1, 5, 10, 25].map((mult) => (
+                <button key={mult} onClick={() => applyQuickBet(mult)} disabled={!minBet}
+                  style={{
+                    flex: 1, textAlign: "center", padding: "7px 0", borderRadius: 10, fontSize: 11.5,
+                    fontWeight: 600, fontFamily: "monospace", border: `1px solid ${c.borderSoft}`,
+                    color: c.mint, background: "rgba(255,255,255,0.03)", cursor: minBet ? "pointer" : "not-allowed",
+                  }}>
+                  {mult}x min
+                </button>
+              ))}
+            </div>
+            <button onClick={applyMax} disabled={!maxBet}
+              style={{ padding: "7px 0", borderRadius: 10, fontSize: 11.5, fontWeight: 600, fontFamily: "monospace", border: `1px solid ${c.mintBorder}`, color: c.mint, background: c.mintBg, cursor: maxBet ? "pointer" : "not-allowed" }}>
+              Max Bet
+            </button>
+
+            <button
+              onClick={handleMainButton}
+              disabled={mainButtonDisabled}
+              style={{
+                width: "100%", marginTop: 8, borderRadius: 16, padding: "16px", fontWeight: 700, fontSize: 15,
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "none",
+                cursor: mainButtonDisabled ? "not-allowed" : "pointer",
+                background: !account ? c.mint : needsApproval ? "#FBBF24" : "linear-gradient(90deg, #FBBF24, #F97316)",
+                color: !account ? "#06110C" : needsApproval ? "#111827" : "#111827",
+                opacity: mainButtonDisabled ? 0.6 : 1,
+              }}>
+              {!account && <IconWallet size={16} color="#06110C" />}
+              {buttonLabel}
+            </button>
+
+            {status && (
+              <div style={{
+                marginTop: 4, fontSize: 11.5, padding: "10px 12px", borderRadius: 10, fontFamily: "monospace",
+                lineHeight: 1.5, wordBreak: "break-word",
+                background: statusColors[status.type].bg, color: statusColors[status.type].color,
+                border: `1px solid ${statusColors[status.type].border}`,
+              }}>
+                {status.text}
+                {status.hash && (
+                  <>
+                    {" "}
+                    <a href={`https://sepolia.etherscan.io/tx/${status.hash}`} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline", fontWeight: 700 }}>
+                      {status.hash.slice(0, 10)}...{status.hash.slice(-6)}
+                    </a>
+                  </>
+                )}
+              </div>
+            )}
+
+            <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1px solid ${c.borderSoft}` }}>
+              <p style={{ fontSize: 11, color: c.textFaint, marginBottom: 8, fontWeight: 600 }}>WHEEL SEGMENTS</p>
+              {SEGMENTS.map((seg) => (
+                <div key={seg.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12, padding: "4px 0", color: c.textMuted }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: seg.color }} />
+                    {seg.label}
+                  </span>
+                  <span>{seg.chance}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Panel kanan: roda */}
+          <div style={{ borderRadius: 24, border: `1px solid ${c.border}`, backgroundColor: c.panel, padding: 24, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 20 }}>
+            <div style={{ position: "relative", width: 260, height: 260 }}>
+              <div style={{
+                position: "absolute", top: -6, left: "50%", transform: "translateX(-50%)",
+                width: 0, height: 0, borderLeft: "12px solid transparent", borderRight: "12px solid transparent",
+                borderTop: "20px solid #F97316", zIndex: 5,
+              }} />
+              <div
+                className={lastResult && !spinning && lastResult.multiplierBps > 0 ? "win-pulse" : ""}
+                style={{
+                  width: "100%", height: "100%", borderRadius: "50%",
+                  background: buildWheelGradient(),
+                  border: "6px solid #161B1A",
+                  boxShadow: "0 0 40px rgba(94,234,212,0.15)",
+                  transform: `rotate(${rotation}deg)`,
+                  transition: "transform 4s cubic-bezier(0.17, 0.67, 0.12, 0.99)",
+                  position: "relative",
+                }}>
+                {SEGMENTS.map((seg, i) => {
+                  const angle = i * SEGMENT_ANGLE + SEGMENT_ANGLE / 2;
+                  return (
+                    <div key={seg.label} style={{
+                      position: "absolute", top: "50%", left: "50%",
+                      width: 0, height: 0,
+                      transform: `rotate(${angle}deg) translate(0, -95px) rotate(${-angle}deg)`,
+                    }}>
+                      <span style={{
+                        display: "block", transform: `translate(-50%, -50%) rotate(${angle}deg)`,
+                        fontSize: 13, fontWeight: 800, color: "#0B0D0C", whiteSpace: "nowrap",
+                      }}>
+                        {seg.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{
+                position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+                width: 44, height: 44, borderRadius: "50%", background: c.card,
+                border: `2px solid ${c.mint}`, display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 10, fontWeight: 800, color: c.mint, zIndex: 4,
+              }}>
+                RIALO
+              </div>
+            </div>
+
+            {lastResult && !spinning && (
+              <div style={{
+                textAlign: "center", fontSize: 14, fontWeight: 700,
+                color: lastResult.multiplierBps > 0 ? c.mint : c.danger,
+              }}>
+                {lastResult.multiplierBps > 0
+                  ? `🎉 Won ${ethers.formatUnits(lastResult.payout, decimals)} ${TOKEN_SYMBOL}`
+                  : "😔 Lost this round"}
+              </div>
+            )}
+
+            {poolBalance !== null && (
+              <p style={{ fontSize: 11, color: c.textFaint }}>
+                Pool balance: {Number(ethers.formatUnits(poolBalance, decimals)).toLocaleString()} {TOKEN_SYMBOL}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Riwayat */}
+        <div style={{ marginTop: 24, borderRadius: 24, border: `1px solid ${c.border}`, backgroundColor: c.panel, padding: 20 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#fff", marginBottom: 12 }}>Your Recent Spins</p>
+          {!account ? (
+            <p style={{ fontSize: 12, color: c.textFaint }}>Connect your wallet to see your spin history.</p>
+          ) : history.length === 0 ? (
+            <p style={{ fontSize: 12, color: c.textFaint }}>No games played yet — your history will appear here.</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {history.map((h, i) => {
+                const mult = Number(h.multiplierBps) / 1000;
+                const won = mult > 0;
+                return (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, padding: "6px 8px", borderRadius: 8, background: "rgba(255,255,255,0.03)" }}>
+                    <span style={{ color: c.textMuted }}>Bet {ethers.formatUnits(h.betAmount, decimals)} {TOKEN_SYMBOL}</span>
+                    <span style={{ color: won ? c.mint : c.danger, fontWeight: 700 }}>
+                      {won ? `${mult}x → +${ethers.formatUnits(h.payout, decimals)}` : "LOSE"}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('wheel-root')).render(<RialoWheelGame />);
+</script>
+</body>
+</html>
