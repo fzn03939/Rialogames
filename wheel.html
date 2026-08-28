@@ -155,6 +155,24 @@
     return idx;
   }
 
+  // --- FIX: deteksi provider wallet dengan fallback ---
+  // Sebelumnya kode hanya mengecek window.ethereum, sehingga gagal
+  // mendeteksi OKX Wallet ketika "Set as Default" belum diaktifkan
+  // (OKX kadang hanya inject sebagai window.okxwallet).
+  // Fungsi ini mencoba beberapa provider yang umum dipakai wallet mobile.
+  function getInjectedProvider() {
+    if (typeof window === "undefined") return null;
+    // Multi-wallet standar (EIP-6963 fallback lama): window.ethereum.providers
+    if (window.ethereum?.providers?.length) {
+      const okx = window.ethereum.providers.find(p => p.isOkxWallet || p.isOKExWallet);
+      if (okx) return okx;
+      return window.ethereum.providers[0];
+    }
+    if (window.okxwallet) return window.okxwallet;
+    if (window.ethereum) return window.ethereum;
+    return null;
+  }
+
   function RialoWheelGame() {
     const [provider, setProvider] = useState(null);
     const [signer, setSigner] = useState(null);
@@ -182,13 +200,14 @@
     const readProvider = useMemo(() => new ethers.JsonRpcProvider(RPC_URL), []);
 
     const connectWallet = useCallback(async () => {
-      if (!window.ethereum) {
-        setStatus({ type: "error", text: "Wallet not detected. Open this page in a browser with MetaMask (or the MetaMask app on mobile)." });
+      const injected = getInjectedProvider();
+      if (!injected) {
+        setStatus({ type: "error", text: "Wallet not detected. Open this page inside your wallet app's built-in browser (e.g. OKX Wallet → Discover), or use a browser with MetaMask/OKX Wallet installed." });
         return;
       }
       try {
         setLoading(true);
-        const browserProvider = new ethers.BrowserProvider(window.ethereum, "any");
+        const browserProvider = new ethers.BrowserProvider(injected, "any");
         await browserProvider.send("eth_requestAccounts", []);
         const network = await browserProvider.getNetwork();
         const s = await browserProvider.getSigner();
@@ -207,10 +226,11 @@
     }, []);
 
     const switchToSepolia = useCallback(async () => {
-      if (!window.ethereum) return;
+      const injected = getInjectedProvider();
+      if (!injected) return;
       try {
         setLoading(true);
-        await window.ethereum.request({
+        await injected.request({
           method: "wallet_switchEthereumChain",
           params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
         });
@@ -224,8 +244,9 @@
     }, []);
 
     const disconnectWallet = useCallback(async () => {
+      const injected = getInjectedProvider();
       try {
-        await window.ethereum?.request({
+        await injected?.request({
           method: "wallet_revokePermissions",
           params: [{ eth_accounts: {} }],
         });
@@ -240,7 +261,8 @@
     }, []);
 
     useEffect(() => {
-      if (!window.ethereum) return;
+      const injected = getInjectedProvider();
+      if (!injected) return;
       const handleAccountsChanged = (accounts) => {
         if (!accounts || accounts.length === 0) {
           setProvider(null); setSigner(null); setAccount(null); setChainIdHex(null); setStatus(null);
@@ -249,11 +271,11 @@
         }
       };
       const handleChainChanged = () => { if (account) connectWallet(); };
-      window.ethereum.on?.("accountsChanged", handleAccountsChanged);
-      window.ethereum.on?.("chainChanged", handleChainChanged);
+      injected.on?.("accountsChanged", handleAccountsChanged);
+      injected.on?.("chainChanged", handleChainChanged);
       return () => {
-        window.ethereum.removeListener?.("accountsChanged", handleAccountsChanged);
-        window.ethereum.removeListener?.("chainChanged", handleChainChanged);
+        injected.removeListener?.("accountsChanged", handleAccountsChanged);
+        injected.removeListener?.("chainChanged", handleChainChanged);
       };
     }, [account, connectWallet]);
 
