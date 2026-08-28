@@ -43,12 +43,6 @@
     50% { box-shadow: 0 0 0 14px rgba(94,234,212,0); }
   }
   .win-pulse { animation: pulse-win 1s ease-out 2; }
-
-  @keyframes pulse-wait {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.55; }
-  }
-  .wait-pulse { animation: pulse-wait 1.4s ease-in-out infinite; }
 </style>
 </head>
 <body class="min-h-screen flex flex-col" id="body">
@@ -74,27 +68,20 @@
   // @ts-nocheck
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-  // --- Kontrak V2: commit-reveal, ganti dari kontrak lama yang randomness-nya predictable ---
-  const WHEEL_CONTRACT_ADDRESS = "0x2f98Da59D50AA303426CA0AD350D7C3CCD33fa21";
+  const WHEEL_CONTRACT_ADDRESS = "0xE608973471c5489d00d80bf3Ac7A5De46D1e8c46";
   const TOKEN_ADDRESS          = "0x12934cb5e37e1eeec80e889df7614febe312ecd9";
   const TOKEN_SYMBOL           = "RIALO";
   const SEPOLIA_CHAIN_ID_HEX   = "0xaa36a7"; // 11155111
   const RPC_URL                = "https://ethereum-sepolia-rpc.publicnode.com";
-  const REVEAL_DELAY_BLOCKS    = 2; // harus sama dengan konstanta di kontrak
 
   const WHEEL_ABI = [
-    "function commitSpin(uint256 amount) external",
-    "function revealSpin() external returns (uint16 multiplierBps, uint256 payout)",
-    "function refundExpired() external",
-    "function getPendingSpin(address player) view returns (uint256 betAmount, uint256 revealBlock, bool resolved, bool canReveal, bool expired)",
+    "function spin(uint256 amount) external returns (uint16 multiplierBps, uint256 payout)",
     "function minBet() view returns (uint256)",
     "function maxBet() view returns (uint256)",
     "function paused() view returns (bool)",
     "function getPoolBalance() view returns (uint256)",
     "function getPlayerHistory(address player) view returns (tuple(address player, uint256 betAmount, uint16 multiplierBps, uint256 payout, uint256 timestamp)[])",
-    "event Committed(address indexed player, uint256 betAmount, uint256 revealBlock)",
-    "event Spun(address indexed player, uint256 betAmount, uint16 multiplierBps, uint256 payout, uint256 indexed historyId)",
-    "event Refunded(address indexed player, uint256 betAmount)"
+    "event Spun(address indexed player, uint256 betAmount, uint16 multiplierBps, uint256 payout, uint256 indexed historyId)"
   ];
 
   const ERC20_ABI = [
@@ -168,10 +155,14 @@
     return idx;
   }
 
-  // Deteksi provider wallet dengan fallback (window.ethereum atau window.okxwallet,
-  // atau daftar window.ethereum.providers kalau ada beberapa wallet aktif sekaligus).
+  // --- FIX: deteksi provider wallet dengan fallback ---
+  // Sebelumnya kode hanya mengecek window.ethereum, sehingga gagal
+  // mendeteksi OKX Wallet ketika "Set as Default" belum diaktifkan
+  // (OKX kadang hanya inject sebagai window.okxwallet).
+  // Fungsi ini mencoba beberapa provider yang umum dipakai wallet mobile.
   function getInjectedProvider() {
     if (typeof window === "undefined") return null;
+    // Multi-wallet standar (EIP-6963 fallback lama): window.ethereum.providers
     if (window.ethereum?.providers?.length) {
       const okx = window.ethereum.providers.find(p => p.isOkxWallet || p.isOKExWallet);
       if (okx) return okx;
@@ -194,10 +185,6 @@
     const [maxBet, setMaxBet] = useState(null);
     const [poolBalance, setPoolBalance] = useState(null);
     const [gamePaused, setGamePaused] = useState(false);
-    const [currentBlock, setCurrentBlock] = useState(null);
-
-    // Status commit-reveal yang sedang berjalan buat player ini
-    const [pending, setPending] = useState(null); // { betAmount, revealBlock, resolved, canReveal, expired }
 
     const [betAmount, setBetAmount] = useState("");
     const [loading, setLoading] = useState(false);
@@ -297,42 +284,28 @@
         const wheel = new ethers.Contract(WHEEL_CONTRACT_ADDRESS, WHEEL_ABI, readProvider);
         const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, readProvider);
 
-        const [dec, mn, mx, pool, isPaused, blockNum] = await Promise.all([
+        const [dec, mn, mx, pool, isPaused] = await Promise.all([
           token.decimals(),
           wheel.minBet(),
           wheel.maxBet(),
           wheel.getPoolBalance(),
           wheel.paused(),
-          readProvider.getBlockNumber(),
         ]);
         setDecimals(Number(dec));
         setMinBet(mn);
         setMaxBet(mx);
         setPoolBalance(pool);
         setGamePaused(isPaused);
-        setCurrentBlock(blockNum);
 
         if (account) {
-          const [bal, allow, hist, pendingSpin] = await Promise.all([
+          const [bal, allow, hist] = await Promise.all([
             token.balanceOf(account),
             token.allowance(account, WHEEL_CONTRACT_ADDRESS),
             wheel.getPlayerHistory(account),
-            wheel.getPendingSpin(account),
           ]);
           setTokenBalance(ethers.formatUnits(bal, dec));
           setAllowance(allow);
           setHistory([...hist].reverse().slice(0, 8));
-
-          if (pendingSpin.betAmount > 0n && !pendingSpin.resolved) {
-            setPending({
-              betAmount: pendingSpin.betAmount,
-              revealBlock: pendingSpin.revealBlock,
-              canReveal: pendingSpin.canReveal,
-              expired: pendingSpin.expired,
-            });
-          } else {
-            setPending(null);
-          }
         }
       } catch (err) {
         console.error(err);
@@ -341,8 +314,7 @@
 
     useEffect(() => { refreshData(); }, [refreshData]);
     useEffect(() => {
-      // Poll lebih sering (5s) karena kita perlu update status "boleh reveal" secara live
-      const id = setInterval(refreshData, 5000);
+      const id = setInterval(refreshData, 15000);
       return () => clearInterval(id);
     }, [refreshData]);
 
@@ -351,6 +323,7 @@
       try { return ethers.parseUnits(betAmount, decimals); } catch { return null; }
     }, [betAmount, decimals]);
 
+    // Cukup approve sekali: cek terhadap allowance yang sudah ada, bukan approve ulang tiap bet
     const needsApproval = betAmountWei !== null && allowance < betAmountWei;
 
     const applyQuickBet = (multiplierOfMin) => {
@@ -370,10 +343,12 @@
       setStatus({ type: "info", text: "Approving RIALO, confirm in your wallet..." });
       try {
         const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, signer);
+        // Approve unlimited (MaxUint256) sekali di awal, jadi spin selanjutnya
+        // tidak perlu approve lagi — tinggal connect wallet lalu spin.
         const tx = await token.approve(WHEEL_CONTRACT_ADDRESS, ethers.MaxUint256);
         setStatus({ type: "info", text: "Waiting for approval confirmation...", hash: tx.hash });
         await tx.wait();
-        setStatus({ type: "success", text: "Approved! You can commit a spin now." });
+        setStatus({ type: "success", text: "Approved! You can spin now." });
         refreshData();
       } catch (err) {
         setStatus({ type: "error", text: "Approve failed: " + (err.shortMessage || err.message || "unknown error") });
@@ -382,7 +357,7 @@
       }
     };
 
-    const doCommit = async () => {
+    const doSpin = async () => {
       if (!signer || !betAmountWei) return;
       if (minBet !== null && betAmountWei < minBet) {
         setStatus({ type: "error", text: `Bet is below the minimum (${ethers.formatUnits(minBet, decimals)} ${TOKEN_SYMBOL}).` });
@@ -394,48 +369,29 @@
       }
       setLoading(true);
       setLastResult(null);
-      setStatus({ type: "info", text: "Placing your bet, confirm in your wallet..." });
+      setStatus({ type: "info", text: "Spinning the wheel, confirm in your wallet..." });
       try {
         const wheel = new ethers.Contract(WHEEL_CONTRACT_ADDRESS, WHEEL_ABI, signer);
-        const tx = await wheel.commitSpin(betAmountWei);
-        setStatus({ type: "info", text: "Waiting for confirmation...", hash: tx.hash });
-        await tx.wait();
-        setStatus({ type: "success", text: `Bet placed! Wait ${REVEAL_DELAY_BLOCKS} block(s), then reveal your result.`, hash: tx.hash });
-        refreshData();
-      } catch (err) {
-        setStatus({ type: "error", text: "Commit failed: " + (err.shortMessage || err.message || "unknown error") });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const doReveal = async () => {
-      if (!signer) return;
-      setLoading(true);
-      setStatus({ type: "info", text: "Revealing the result, confirm in your wallet..." });
-      try {
-        const wheel = new ethers.Contract(WHEEL_CONTRACT_ADDRESS, WHEEL_ABI, signer);
-        const tx = await wheel.revealSpin();
+        const tx = await wheel.spin(betAmountWei);
         setStatus({ type: "info", text: "Waiting for the result on-chain...", hash: tx.hash });
         const receipt = await tx.wait();
 
+        // Ambil hasil dari event Spun
         let multiplierBps = 0;
         let payout = 0n;
-        let betAmt = pending ? pending.betAmount : 0n;
         for (const log of receipt.logs) {
           try {
             const parsed = wheel.interface.parseLog(log);
             if (parsed && parsed.name === "Spun") {
               multiplierBps = Number(parsed.args.multiplierBps);
               payout = parsed.args.payout;
-              betAmt = parsed.args.betAmount;
               break;
             }
           } catch { /* bukan log dari kontrak ini, lewati */ }
         }
 
         animateToResult(multiplierBps);
-        setLastResult({ multiplierBps, payout, betAmount: betAmt });
+        setLastResult({ multiplierBps, payout, betAmount: betAmountWei });
 
         setTimeout(() => {
           if (multiplierBps > 0) {
@@ -446,25 +402,7 @@
           refreshData();
         }, 4200);
       } catch (err) {
-        setStatus({ type: "error", text: "Reveal failed: " + (err.shortMessage || err.message || "unknown error") });
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const doRefund = async () => {
-      if (!signer) return;
-      setLoading(true);
-      setStatus({ type: "info", text: "Refunding your expired bet, confirm in your wallet..." });
-      try {
-        const wheel = new ethers.Contract(WHEEL_CONTRACT_ADDRESS, WHEEL_ABI, signer);
-        const tx = await wheel.refundExpired();
-        setStatus({ type: "info", text: "Waiting for confirmation...", hash: tx.hash });
-        await tx.wait();
-        setStatus({ type: "success", text: "Bet refunded.", hash: tx.hash });
-        refreshData();
-      } catch (err) {
-        setStatus({ type: "error", text: "Refund failed: " + (err.shortMessage || err.message || "unknown error") });
+        setStatus({ type: "error", text: "Spin failed: " + (err.shortMessage || err.message || "unknown error") });
       } finally {
         setLoading(false);
       }
@@ -488,33 +426,19 @@
       setTimeout(() => setSpinning(false), 4000);
     };
 
-    const blocksLeft = pending && currentBlock !== null
-      ? Math.max(0, Number(pending.revealBlock) - Number(currentBlock))
-      : null;
-
-    let buttonLabel, mainAction;
-    if (!account) {
-      buttonLabel = "Connect Wallet"; mainAction = connectWallet;
-    } else if (!onSepolia) {
-      buttonLabel = "Switch to Sepolia first"; mainAction = switchToSepolia;
-    } else if (pending && pending.expired) {
-      buttonLabel = "Refund Expired Bet"; mainAction = doRefund;
-    } else if (pending && pending.canReveal) {
-      buttonLabel = "REVEAL RESULT"; mainAction = doReveal;
-    } else if (pending) {
-      buttonLabel = blocksLeft !== null ? `Waiting for reveal (${blocksLeft} block${blocksLeft === 1 ? "" : "s"} left)...` : "Waiting for reveal...";
-      mainAction = () => {};
-    } else if (gamePaused) {
-      buttonLabel = "Game is paused"; mainAction = () => {};
-    } else if (!betAmount) {
-      buttonLabel = "Enter a bet amount"; mainAction = () => {};
-    } else if (needsApproval) {
-      buttonLabel = `Approve ${TOKEN_SYMBOL}`; mainAction = doApprove;
-    } else if (loading) {
-      buttonLabel = "Processing..."; mainAction = () => {};
-    } else {
-      buttonLabel = "PLACE BET (Step 1/2)"; mainAction = doCommit;
-    }
+    const buttonLabel = !account
+      ? "Connect Wallet"
+      : !onSepolia
+      ? "Switch to Sepolia first"
+      : gamePaused
+      ? "Game is paused"
+      : !betAmount
+      ? "Enter a bet amount"
+      : needsApproval
+      ? `Approve ${TOKEN_SYMBOL}`
+      : loading
+      ? "Processing..."
+      : "SPIN TO WIN!";
 
     const statusColors = {
       info: { bg: "rgba(139,127,255,0.1)", color: "#B4ACFF", border: "rgba(139,127,255,0.25)" },
@@ -522,11 +446,14 @@
       success: { bg: c.mintBg, color: c.mint, border: c.mintBorder },
     };
 
-    const waitingForReveal = pending && !pending.canReveal && !pending.expired;
-    const mainButtonDisabled = loading || spinning || (!account) === false && (
-      (!pending && !gamePaused && account && onSepolia && !betAmount) ||
-      waitingForReveal
-    );
+    const handleMainButton = () => {
+      if (!account) return connectWallet();
+      if (!onSepolia) return switchToSepolia();
+      if (needsApproval) return doApprove();
+      return doSpin();
+    };
+
+    const mainButtonDisabled = loading || spinning || (account && onSepolia && !gamePaused && !betAmount);
 
     return (
       <div style={{ width: "100%", maxWidth: 980, margin: "0 auto" }}>
@@ -535,7 +462,6 @@
              RIALO WHEEL
           </h1>
           <p style={{ color: c.textMuted, fontSize: 13, marginTop: 4 }}>Spin to win — powered by ComHub</p>
-          <p style={{ color: c.textFaint, fontSize: 10.5, marginTop: 2 }}>Provably fair: commit your bet, then reveal after {REVEAL_DELAY_BLOCKS} block(s)</p>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
@@ -588,7 +514,6 @@
             <div style={{ borderRadius: 16, backgroundColor: c.field, border: `1px solid ${c.borderSoft}`, padding: "12px 16px", display: "flex", alignItems: "center", gap: 10 }}>
               <input
                 type="number" inputMode="decimal" placeholder="0.0" value={betAmount}
-                disabled={!!pending}
                 onChange={(e) => setBetAmount(e.target.value)}
                 style={{ background: "transparent", outline: "none", border: "none", fontSize: 22, fontWeight: 600, color: c.text, width: "100%" }} />
               <span style={{ fontSize: 13, fontWeight: 600, color: c.textMuted }}>{TOKEN_SYMBOL}</span>
@@ -601,36 +526,30 @@
 
             <div style={{ display: "flex", gap: 6 }}>
               {[1, 5, 10, 25].map((mult) => (
-                <button key={mult} onClick={() => applyQuickBet(mult)} disabled={!minBet || !!pending}
+                <button key={mult} onClick={() => applyQuickBet(mult)} disabled={!minBet}
                   style={{
                     flex: 1, textAlign: "center", padding: "7px 0", borderRadius: 10, fontSize: 11.5,
                     fontWeight: 600, fontFamily: "monospace", border: `1px solid ${c.borderSoft}`,
-                    color: c.mint, background: "rgba(0,0,0,0.02)", cursor: (minBet && !pending) ? "pointer" : "not-allowed",
-                    opacity: pending ? 0.5 : 1,
+                    color: c.mint, background: "rgba(0,0,0,0.02)", cursor: minBet ? "pointer" : "not-allowed",
                   }}>
                   {mult}x min
                 </button>
               ))}
             </div>
-            <button onClick={applyMax} disabled={!maxBet || !!pending}
-              style={{ padding: "7px 0", borderRadius: 10, fontSize: 11.5, fontWeight: 600, fontFamily: "monospace", border: `1px solid ${c.mintBorder}`, color: c.mint, background: c.mintBg, cursor: (maxBet && !pending) ? "pointer" : "not-allowed", opacity: pending ? 0.5 : 1 }}>
+            <button onClick={applyMax} disabled={!maxBet}
+              style={{ padding: "7px 0", borderRadius: 10, fontSize: 11.5, fontWeight: 600, fontFamily: "monospace", border: `1px solid ${c.mintBorder}`, color: c.mint, background: c.mintBg, cursor: maxBet ? "pointer" : "not-allowed" }}>
               Max Bet
             </button>
 
             <button
-              onClick={mainAction}
+              onClick={handleMainButton}
               disabled={mainButtonDisabled}
-              className={waitingForReveal ? "wait-pulse" : ""}
               style={{
                 width: "100%", marginTop: 8, borderRadius: 16, padding: "16px", fontWeight: 700, fontSize: 15,
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8, border: "none",
                 cursor: mainButtonDisabled ? "not-allowed" : "pointer",
-                background: !account ? c.mint
-                  : (pending && pending.canReveal) ? "linear-gradient(90deg, #34D399, #0D9488)"
-                  : (pending && pending.expired) ? "#FBBF24"
-                  : needsApproval ? "#FBBF24"
-                  : "linear-gradient(90deg, #FBBF24, #F97316)",
-                color: !account ? "#06110C" : "#111827",
+                background: !account ? c.mint : needsApproval ? "#FBBF24" : "linear-gradient(90deg, #FBBF24, #F97316)",
+                color: !account ? "#06110C" : needsApproval ? "#111827" : "#111827",
                 opacity: mainButtonDisabled ? 0.6 : 1,
               }}>
               {!account && <IconWallet size={16} color="#06110C" />}
@@ -716,16 +635,6 @@
                 RIALO
               </div>
             </div>
-
-            {pending && !lastResult && (
-              <div style={{ textAlign: "center", fontSize: 12.5, color: c.textMuted }}>
-                {pending.expired
-                  ? "Reveal window expired — refund your bet above."
-                  : pending.canReveal
-                  ? "Ready! Click Reveal Result to spin the wheel."
-                  : `Bet placed: ${ethers.formatUnits(pending.betAmount, decimals)} ${TOKEN_SYMBOL}. Waiting for the next block...`}
-              </div>
-            )}
 
             {lastResult && !spinning && (
               <div style={{
