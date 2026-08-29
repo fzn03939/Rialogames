@@ -485,7 +485,7 @@
           }
         }
 
-        const items = logs.slice(-25).reverse().map((log) => ({
+        const items = logs.slice(-5).reverse().map((log) => ({
           txHash: log.transactionHash,
           amount: log.args.amount,
           guessHeads: log.args.guessHeads,
