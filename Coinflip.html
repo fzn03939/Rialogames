@@ -58,22 +58,12 @@
   </p>
 </footer>
 
-<!-- Dipindah dari unpkg.com ke jsdelivr: unpkg cukup sering lambat/di-rate-limit
-     dan kalau gagal load, halaman jadi blank tanpa pesan error apa pun. -->
 <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js" crossorigin></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.9.0/ethers.umd.min.js" crossorigin></script>
 
 <script>
-  // ==========================================================
-  // Jaring pengaman untuk error PADA HALAMAN INI SAJA.
-  //
-  // Browser dompet Web3 (Mises, MetaMask, dsb.) menyuntikkan script
-  // mereka sendiri ke SETIAP halaman yang dibuka. Kalau script suntikan
-  // itu error, browser tetap melaporkannya lewat event 'error' global —
-  // padahal itu bukan bagian dari game ini. Jadi kita filter dulu.
-  // ==========================================================
   var shownFailure = false;
 
   function looksLikeThirdPartyError(e) {
@@ -171,10 +161,6 @@
     if (!addr) return "";
     return addr.slice(0, 6) + "…" + addr.slice(-4);
   }
-
-  // ---------- Koin 3D: hero / signature element ----------
-  // spinning = true saat approve/broadcast (belum tahu hasil) -> puter terus tanpa henti
-  // flipping = true saat menunggu hasil flip on-chain -> puter lalu berhenti di face hasil akhir
   function Coin({ face, spinIndex, flipping, spinning, size = 176 }) {
     const rotation = spinIndex * 1080 + (face === "tails" ? 180 : 0);
     return (
@@ -284,11 +270,13 @@
     const [coinFace, setCoinFace] = useState("heads");
     const [result, setResult] = useState(null);
     const [error, setError] = useState("");
-    // Naik tiap kali mulai proses approve/flip baru. Dipakai sebagai `key` pada
-    // <Coin/> supaya komponennya benar-benar di-remount setiap flip/approve,
-    // bukan cuma update style -- ini yang mencegah animasi "nyangkut" (stuck)
-    // akibat CSS transition/animation yang tabrakan dengan sisa state sebelumnya.
-    const [animGen, setAnimGen] = useState(0);
+    const [history, setHistory] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const publicProviderRef = useRef(null);
+    if (!publicProviderRef.current) {
+      try { publicProviderRef.current = new ethers.JsonRpcProvider(RPC_URL); } catch (e) { /* noop */ }
+    }
+    const readProvider = provider || publicProviderRef.current;
 
     const onSepolia = chainIdHex === SEPOLIA_CHAIN_ID_HEX;
     function getInjectedProvider() {
@@ -371,18 +359,6 @@ await eth.request({
       }
     }, []);
 
-    // ---------- Disconnect wallet ----------
-    // CATATAN JUJUR soal batasannya: standar wallet browser (EIP-1193) tidak
-    // punya cara resmi untuk dApp "memutus" koneksi dari sisi wallet -- yang
-    // bisa dApp lakukan cuma membersihkan sesi di sisi web ini (provider,
-    // signer, account, balance, dst di-reset ke null, tampilan kembali ke
-    // "Not connected"). Untuk benar-benar mencabut izin di level wallet, kita
-    // coba panggil wallet_revokePermissions (EIP-2255) -- ini didukung
-    // MetaMask & beberapa wallet lain, tapi TIDAK semua wallet mobile (mis.
-    // sebagian wallet berbasis in-app browser) mendukungnya. Kalau wallet
-    // kamu tidak mendukung, sesi lokal tetap kebersihan, tapi saat klik
-    // Connect lagi wallet mungkin langsung nyambung tanpa munculin dialog
-    // approval baru -- itu keterbatasan si wallet, bukan halaman ini.
     const disconnectWallet = useCallback(async () => {
       setError("");
       try {
@@ -406,6 +382,7 @@ if (eth && eth.request) {
         setAllowance(null);
         setResult(null);
         setSelectedTier(null);
+        setHistory([]);
       }
     }, []);
 
@@ -420,8 +397,23 @@ if (!eth) return;
           setAccount(accs[0]);
         }
       };
-      const onChainChanged = (hex) => {
+      
+      const onChainChanged = async (hex) => {
         setChainIdHex(hex);
+        try {
+          const p = new ethers.BrowserProvider(eth);
+          const net = await p.getNetwork();
+          setProvider(p);
+          setChainIdHex("0x" + net.chainId.toString(16));
+          if (account) {
+            try {
+              const s = await p.getSigner();
+              setSigner(s);
+            } catch (e) { /* signer belum siap, akan sync ulang lewat accountsChanged */ }
+          }
+        } catch (e) {
+          // biarkan saja, refreshPublicData tetap jalan lewat public RPC
+        }
       };
       eth.on && eth.on("accountsChanged", onAccountsChanged);
 eth.on && eth.on("chainChanged", onChainChanged);
@@ -429,14 +421,13 @@ eth.on && eth.on("chainChanged", onChainChanged);
         eth.removeListener && eth.removeListener("accountsChanged", onAccountsChanged);
 eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
       };
-    }, []);
+    }, [account]);
 
-    // ---------- Load on-chain data ----------
-    const refreshData = useCallback(async () => {
-      if (!provider || !onSepolia) return;
+    const refreshPublicData = useCallback(async () => {
+      if (!readProvider) return;
       try {
-        const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
-        const game = new ethers.Contract(COINFLIP_ADDRESS, COINFLIP_ABI, provider);
+        const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, readProvider);
+        const game = new ethers.Contract(COINFLIP_ADDRESS, COINFLIP_ABI, readProvider);
         const dec = await token.decimals();
         setDecimals(Number(dec));
 
@@ -446,30 +437,64 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
         setBetTiers(tiers);
         setPaused(isPaused);
         setHouseBalance(house);
-
-        if (account) {
-          const [bal, allw] = await Promise.all([
-            token.balanceOf(account),
-            token.allowance(account, COINFLIP_ADDRESS),
-          ]);
-          setTokenBalance(bal);
-          setAllowance(allw);
-        }
       } catch (err) {
-        setError(err?.shortMessage || err.message || "Failed to load contract data.");
+        // Non-fatal: jangan blokir UI, cukup log. Ini paling sering kejadian
+        // pas network baru saja berpindah.
+        console.warn("refreshPublicData failed", err);
+      }
+    }, [readProvider]);
+
+    const refreshAccountData = useCallback(async () => {
+      if (!provider || !account || !onSepolia) return;
+      try {
+        const token = new ethers.Contract(TOKEN_ADDRESS, ERC20_ABI, provider);
+        const [bal, allw] = await Promise.all([
+          token.balanceOf(account),
+          token.allowance(account, COINFLIP_ADDRESS),
+        ]);
+        setTokenBalance(bal);
+        setAllowance(allw);
+      } catch (err) {
+        setError(err?.shortMessage || err.message || "Failed to load account data.");
       }
     }, [provider, account, onSepolia]);
 
-    useEffect(() => { refreshData(); }, [refreshData]);
+    const refreshData = useCallback(async () => {
+      await refreshPublicData();
+      await refreshAccountData();
+    }, [refreshPublicData, refreshAccountData]);
 
-    // ---------- Approve (real tx) ----------
-    // Approve sekali dengan allowance MAKSIMUM (bukan cuma sejumlah bet saat ini).
-    // Ini penting: kalau approve cuma untuk `betUnits`, ganti tier bet lain kali
-    // akan minta approve lagi setiap ganti nominal. Dengan MaxUint256, approve
-    // ini cukup dilakukan SEKALI SAJA per wallet -- semua flip berikutnya di
-    // tier manapun langsung lompat ke flip tanpa approve ulang.
-    // Koin ikut berputar terus-menerus (idle spin) selama proses approve berlangsung,
-    // dari saat tanda tangan dikirim sampai tx approve dikonfirmasi di jaringan.
+    useEffect(() => { refreshPublicData(); }, [refreshPublicData]);
+    useEffect(() => { refreshAccountData(); }, [refreshAccountData]);
+
+    const loadHistory = useCallback(async () => {
+      if (!account || !readProvider) { setHistory([]); return; }
+      setHistoryLoading(true);
+      try {
+        const game = new ethers.Contract(COINFLIP_ADDRESS, COINFLIP_ABI, readProvider);
+        const filter = game.filters.Flipped(account);
+        const latestBlock = await readProvider.getBlockNumber();
+        // Batasi rentang blok supaya tidak membebani RPC publik.
+        const fromBlock = Math.max(0, latestBlock - 200000);
+        const logs = await game.queryFilter(filter, fromBlock, latestBlock);
+        const items = logs.slice(-25).reverse().map((log) => ({
+          txHash: log.transactionHash,
+          amount: log.args.amount,
+          guessHeads: log.args.guessHeads,
+          result: log.args.result,
+          won: log.args.won,
+          payout: log.args.payout,
+        }));
+        setHistory(items);
+      } catch (err) {
+        console.warn("loadHistory failed", err);
+      } finally {
+        setHistoryLoading(false);
+      }
+    }, [account, readProvider]);
+
+    useEffect(() => { loadHistory(); }, [loadHistory]);
+
     const doApprove = useCallback(async () => {
       if (!signer || betUnits === null) return;
       setError("");
@@ -492,14 +517,6 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
       }
     }, [signer, betUnits, refreshData]);
 
-    // ---------- Flip (real tx) ----------
-    // PENTING: kontrak CoinFlip ini membayar payout di DALAM tx flip() yang sama
-    // (lihat event Flipped: won + payout langsung ada di situ). Jadi tidak ada
-    // fungsi "claim" terpisah untuk dipanggil setelah menang — begitu tx flip
-    // sudah confirmed, kalau menang, RIALO-nya sudah otomatis masuk ke wallet.
-    // Koin berputar (flipping) sejak tx dikirim sampai receipt on-chain benar-benar
-    // datang -- bukan lagi dibatasi timer buatan -- supaya hasil menang/kalah yang
-    // ditampilkan selalu sinkron dengan apa yang sebenarnya terjadi di chain.
     const runFlip = useCallback(async () => {
       setError("");
       setResult(null);
@@ -537,22 +554,14 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
           setBusyLabel("");
           return;
         }
-
-        // Remount koin dari nol untuk flip ini -- membuang semua sisa state
-        // animasi/transisi CSS dari flip sebelumnya, supaya animasi selalu
-        // mulai dari kondisi bersih tiap kali (fix untuk animasi yang stuck).
+ 
         setAnimGen((g) => g + 1);
 
-        // Selama menunggu tanda tangan di wallet, koin sudah berputar idle
-        // supaya user tahu sesuatu sedang berlangsung.
         setApproving(true);
         setBusyLabel("Confirm the flip in your wallet...");
         const tx = await game.flip(betUnits, guess === "heads");
         setApproving(false);
 
-        // Dari titik ini koin masuk mode "flipping" sampai hasil ASLI dari
-        // chain didapat -- animasi & minimum delay berjalan paralel dengan
-        // await tx.wait(), bukan lagi dua proses yang lepas satu sama lain.
         setBusyLabel("Waiting for confirmation...");
         setFlipping(true);
         setSpinIndex((i) => i + 1);
@@ -576,6 +585,7 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
         setCoinFace(faceResult);
         setResult({ won, payout, txHash: receipt.hash });
         await refreshData();
+        await loadHistory();
       } catch (err) {
         setError(err?.info?.error?.message || err?.shortMessage || err.message || "Transaction failed.");
       } finally {
@@ -584,7 +594,7 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
         setBusy(false);
         setBusyLabel("");
       }
-    }, [account, signer, onSepolia, betUnits, tokenBalance, paused, guess, refreshData]);
+    }, [account, signer, onSepolia, betUnits, tokenBalance, paused, guess, refreshData, loadHistory]);
 
     let ctaLabel = "Flip Coin";
     if (!account) ctaLabel = "Connect Wallet";
@@ -783,6 +793,57 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
               </div>
             )}
           </div>
+
+          {account && (
+            <div style={{
+              background: c.panel, borderRadius: 24, padding: "20px 18px",
+              border: `1px solid ${c.border}`, marginTop: 16,
+              boxShadow: "0 4px 24px rgba(10,13,12,0.06)",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: c.textMain }}>Riwayat Flip</div>
+                {historyLoading && <Spinner color={c.textFaint} />}
+              </div>
+              {history.length === 0 ? (
+                <div style={{ fontSize: 12.5, color: c.textFaint }}>
+                  {historyLoading ? "Memuat riwayat…" : "Belum ada riwayat flip di wallet ini."}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {history.map((h, i) => (
+                    <a
+                      key={h.txHash + i}
+                      href={`https://sepolia.etherscan.io/tx/${h.txHash}`}
+                      target="_blank" rel="noopener noreferrer"
+                      style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        padding: "10px 12px", borderRadius: 12, background: c.field,
+                        textDecoration: "none",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{
+                          width: 8, height: 8, borderRadius: "50%",
+                          background: h.won ? c.mint : c.danger, flexShrink: 0,
+                        }} />
+                        <div>
+                          <div style={{ fontSize: 12.5, color: c.textMain, fontWeight: 700 }}>
+                            {h.won ? "Menang" : "Kalah"}
+                          </div>
+                          <div style={{ fontSize: 11, color: c.textFaint }}>
+                            Tebak {h.guessHeads ? "Heads" : "Tails"} · Hasil {h.result ? "Heads" : "Tails"}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, color: h.won ? c.mint : c.textFaint }}>
+                        {h.won ? `+${fmt(h.payout, decimals)}` : `-${fmt(h.amount, decimals)}`} {TOKEN_SYMBOL}
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
     );
@@ -802,18 +863,6 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
 </script>
 
 <script>
-  // ==========================================================
-  // Transform manual, bukan pakai auto-scan bawaan <script type="text/babel">.
-  //
-  // Kenapa: versi Babel standalone terbaru default memakai "automatic
-  // JSX runtime", yang menghasilkan kode berisi `import { jsx as _jsx }
-  // from "react/jsx-runtime"` di baris paling atas. Karena script ini
-  // dijalankan sebagai script biasa (bukan type="module"), baris import
-  // itu memicu error "Cannot use import statement outside a module".
-  //
-  // Solusi: transform manual dengan opsi runtime "classic", yang
-  // menghasilkan React.createElement(...) biasa — tidak butuh import.
-  // ==========================================================
   (function () {
     try {
       var src = document.getElementById('app-source').textContent;
