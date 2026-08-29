@@ -106,7 +106,7 @@
 <script type="text/plain" id="app-source">
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-  const COINFLIP_ADDRESS = "0xBe0C881a509B74D76D021F79FaBfb9F818E13060";
+  const COINFLIP_ADDRESS = "0xd28cF79f9059D582978d7A487580EDff1AEd6f5A";
   const TOKEN_ADDRESS    = "0x12934cb5e37e1eeec80e889df7614febe312ecd9";
   const TOKEN_SYMBOL     = "RIALO";
   const SEPOLIA_CHAIN_ID_HEX = "0xaa36a7";
@@ -595,15 +595,38 @@
 
         setCoinFace(faceResult);
         setResult({ won, payout, txHash: receipt.hash });
+        // Refresh balance/history only AFTER the result has been committed to
+        // state above, so the coin animation + outcome always render first
+        // and the balance/history panels never "leak" the outcome early.
         await refreshData();
         await loadHistory();
       } catch (err) {
-        setError(err?.info?.error?.message || err?.shortMessage || err.message || "Transaction failed.");
+        const raw = err?.info?.error?.message || err?.shortMessage || err.message || "Transaction failed.";
+        // The contract/delegation layer reverts the whole tx when a loss
+        // would decrease the wallet's balance (ERC20BalanceChangeEnforcer).
+        // Surface that as a clear "you lost" message instead of a raw
+        // Solidity/enforcer string, and make sure the coin still shows a
+        // losing state instead of being left mid-spin.
+        const isBalanceEnforcerRevert =
+          /ERC20BalanceChangeEnforcer/i.test(raw) ||
+          /insufficient-balance-increase/i.test(raw);
+
+        if (isBalanceEnforcerRevert) {
+          setResult({ won: false, payout: 0n, txHash: null, reverted: true });
+          setError(
+            "You lost this flip — the game contract reverted the losing transaction instead of settling it on-chain, so no payout or history entry was recorded. Your bet amount was not deducted, but gas was still spent."
+          );
+        } else {
+          setError(raw);
+        }
       } finally {
         setApproving(false);
         setFlipping(false);
         setBusy(false);
         setBusyLabel("");
+        // Always resync balance/allowance after any outcome (win, loss,
+        // or reverted loss) so the UI never shows stale numbers.
+        refreshData();
       }
     }, [account, signer, onSepolia, betUnits, tokenBalance, paused, guess, refreshData, loadHistory]);
 
@@ -704,6 +727,11 @@
                   {result.won && (
                     <div style={{ fontSize: 11.5, color: c.textFaint, marginTop: 2 }}>
                       Payout sent automatically — nothing else to claim.
+                    </div>
+                  )}
+                  {result.reverted && (
+                    <div style={{ fontSize: 11.5, color: c.textFaint, marginTop: 2 }}>
+                      No on-chain record for this loss — the transaction reverted.
                     </div>
                   )}
                   {result.txHash && (
