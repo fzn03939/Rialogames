@@ -155,23 +155,38 @@
     return idx;
   }
 
-  // --- FIX: deteksi provider wallet dengan fallback ---
-  // Sebelumnya kode hanya mengecek window.ethereum, sehingga gagal
-  // mendeteksi OKX Wallet ketika "Set as Default" belum diaktifkan
-  // (OKX kadang hanya inject sebagai window.okxwallet).
-  // Fungsi ini mencoba beberapa provider yang umum dipakai wallet mobile.
   function getInjectedProvider() {
-    if (typeof window === "undefined") return null;
-    // Multi-wallet standar (EIP-6963 fallback lama): window.ethereum.providers
-    if (window.ethereum?.providers?.length) {
-      const okx = window.ethereum.providers.find(p => p.isOkxWallet || p.isOKExWallet);
-      if (okx) return okx;
-      return window.ethereum.providers[0];
+  if (typeof window === "undefined") return null;
+
+  const pickFrom = (win) => {
+    try {
+      if (win.ethereum?.providers?.length) {
+        const okx = win.ethereum.providers.find(p => p.isOkxWallet || p.isOKExWallet);
+        if (okx) return okx;
+        return win.ethereum.providers[0];
+      }
+      if (win.okxwallet) return win.okxwallet;
+      if (win.ethereum) return win.ethereum;
+    } catch (e) {
     }
-    if (window.okxwallet) return window.okxwallet;
-    if (window.ethereum) return window.ethereum;
     return null;
+  };
+
+  let p = pickFrom(window);
+  if (p) return p;
+
+  if (window.parent && window.parent !== window) {
+    p = pickFrom(window.parent);
+    if (p) return p;
   }
+
+  if (window.top && window.top !== window) {
+    p = pickFrom(window.top);
+    if (p) return p;
+  }
+
+  return null;
+}
 
   function RialoWheelGame() {
     const [provider, setProvider] = useState(null);
