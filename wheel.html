@@ -91,6 +91,33 @@
     "function decimals() external view returns (uint8)"
   ];
 
+  // Patch: peta pesan error on-chain (Indonesia) -> tampilan (Inggris).
+  // Kontrak token/wheel tidak diubah; ini cuma menerjemahkan teks
+  // yang tampil ke user di sini, di sisi frontend.
+  const ERROR_TRANSLATIONS = [
+    ["Saldo tidak cukup", "Insufficient balance"],
+    ["Allowance tidak cukup", "Insufficient allowance"],
+    ["Bet below minimum", "Bet below minimum"],
+    ["Bet above maximum", "Bet above maximum"],
+    ["Insufficient pool balance", "Insufficient pool balance"],
+    ["Invalid bet limits", "Invalid bet limits"],
+    ["Not owner", "Not owner"],
+    ["Game is paused", "Game is paused"],
+    ["Zero token address", "Zero token address"],
+    ["Zero address", "Zero address"],
+  ];
+
+  function translateOnChainError(rawMessage) {
+    if (!rawMessage) return rawMessage;
+    let out = rawMessage;
+    for (const [id, en] of ERROR_TRANSLATIONS) {
+      if (out.includes(id)) {
+        out = out.split(id).join(en);
+      }
+    }
+    return out;
+  }
+
   // Urutan segmen roda searah jarum jam, mulai dari atas (0 derajat)
   const SEGMENTS = [
     { label: "5x",   multiplierBps: 5000,  color: "#F2B705", chance: "8%" },
@@ -234,7 +261,7 @@
         setChainIdHex("0x" + network.chainId.toString(16));
         setStatus(null);
       } catch (err) {
-        setStatus({ type: "error", text: "Failed to connect: " + (err.shortMessage || err.message) });
+        setStatus({ type: "error", text: "Failed to connect: " + translateOnChainError(err.shortMessage || err.message) });
       } finally {
         setLoading(false);
       }
@@ -252,7 +279,7 @@
         setChainIdHex(SEPOLIA_CHAIN_ID_HEX);
         setStatus(null);
       } catch (err) {
-        setStatus({ type: "error", text: "Failed to switch network: " + (err.shortMessage || err.message) });
+        setStatus({ type: "error", text: "Failed to switch network: " + translateOnChainError(err.shortMessage || err.message) });
       } finally {
         setLoading(false);
       }
@@ -366,7 +393,8 @@
         setStatus({ type: "success", text: "Approved! You can spin now." });
         refreshData();
       } catch (err) {
-        setStatus({ type: "error", text: "Approve failed: " + (err.shortMessage || err.message || "unknown error") });
+        const rawMsg = err.shortMessage || err.message || "unknown error";
+        setStatus({ type: "error", text: "Approve failed: " + translateOnChainError(rawMsg) });
       } finally {
         setLoading(false);
       }
@@ -395,7 +423,7 @@
 ]);
 
 if (!receipt) {
-  throw new Error("Timeout menunggu konfirmasi. Cek tx di explorer lalu refresh.");
+  throw new Error("Timeout waiting for confirmation. Check the tx on the explorer and refresh.");
 }
 
         // Ambil hasil dari event Spun
@@ -424,7 +452,8 @@ if (!receipt) {
           refreshData();
         }, 4200);
       } catch (err) {
-        setStatus({ type: "error", text: "Spin failed: " + (err.shortMessage || err.message || "unknown error") });
+        const rawMsg = err.shortMessage || err.message || "unknown error";
+        setStatus({ type: "error", text: "Spin failed: " + translateOnChainError(rawMsg) });
       } finally {
         setLoading(false);
       }
