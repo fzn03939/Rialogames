@@ -58,22 +58,12 @@
   </p>
 </footer>
 
-<!-- Dipindah dari unpkg.com ke jsdelivr: unpkg cukup sering lambat/di-rate-limit
-     dan kalau gagal load, halaman jadi blank tanpa pesan error apa pun. -->
 <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js" crossorigin></script>
 <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js" crossorigin></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.9.0/ethers.umd.min.js" crossorigin></script>
 
 <script>
-  // ==========================================================
-  // Jaring pengaman untuk error PADA HALAMAN INI SAJA.
-  //
-  // Browser dompet Web3 (Mises, MetaMask, dsb.) menyuntikkan script
-  // mereka sendiri ke SETIAP halaman yang dibuka. Kalau script suntikan
-  // itu error, browser tetap melaporkannya lewat event 'error' global —
-  // padahal itu bukan bagian dari game ini. Jadi kita filter dulu.
-  // ==========================================================
   var shownFailure = false;
 
   function looksLikeThirdPartyError(e) {
@@ -97,7 +87,7 @@
       shownFailure = true;
       root.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
         'color:#DC2626;font-family:system-ui,sans-serif;font-size:14px;text-align:center;padding:24px;">' +
-        'Gagal memuat halaman.<br/>Cek koneksi internet kamu lalu refresh.<br/>' +
+        'Failed to load the page.<br/>Check your internet connection and refresh.<br/>' +
         '<span style="opacity:.6;font-size:12px;">(' + (reason || 'unknown error') + ')</span></div>';
     }
   }
@@ -116,12 +106,13 @@
 <script type="text/plain" id="app-source">
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-  // ================== KONFIGURASI ==================
   const COINFLIP_ADDRESS = "0xBe0C881a509B74D76D021F79FaBfb9F818E13060";
-  const TOKEN_ADDRESS    = "0x12934cb5e37e1eeec80e889df7614febe312ecd9"; // RIALO
+  const TOKEN_ADDRESS    = "0x12934cb5e37e1eeec80e889df7614febe312ecd9";
   const TOKEN_SYMBOL     = "RIALO";
-  const SEPOLIA_CHAIN_ID_HEX = "0xaa36a7"; // 11155111
+  const SEPOLIA_CHAIN_ID_HEX = "0xaa36a7";
   const RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
+  const LOG_QUERY_CHUNK = 5000;
+  const HISTORY_LOOKBACK_BLOCKS = 200000;
 
   const HEADS_IMG = "logo_transparent.png";
   const TAILS_IMG = "icon-app.svg";
@@ -172,9 +163,6 @@
     return addr.slice(0, 6) + "…" + addr.slice(-4);
   }
 
-  // ---------- Koin 3D: hero / signature element ----------
-  // spinning = true saat approve/broadcast (belum tahu hasil) -> puter terus tanpa henti
-  // flipping = true saat menunggu hasil flip on-chain -> puter lalu berhenti di face hasil akhir
   function Coin({ face, spinIndex, flipping, spinning, size = 176 }) {
     const rotation = spinIndex * 1080 + (face === "tails" ? 180 : 0);
     return (
@@ -190,7 +178,6 @@
           transition: flipping ? "transform 1.65s cubic-bezier(0.2, 0.9, 0.25, 1)" : "transform 0.5s ease",
           animation: spinning ? "coinIdleSpin 0.9s linear infinite" : "none",
         }}>
-          {/* Heads */}
           <div style={{
             position: "absolute", inset: 0, borderRadius: "50%",
             backfaceVisibility: "hidden",
@@ -201,7 +188,6 @@
           }}>
             <img src={HEADS_IMG} alt="Heads" style={{ width: "72%", height: "72%", objectFit: "cover", borderRadius: "50%" }} onError={(e)=>{e.target.style.display='none';}} />
           </div>
-          {/* Tails */}
           <div style={{
             position: "absolute", inset: 0, borderRadius: "50%",
             backfaceVisibility: "hidden",
@@ -275,7 +261,7 @@
     const [houseBalance, setHouseBalance] = useState(null);
 
     const [guess, setGuess] = useState("heads");
-    const [selectedTier, setSelectedTier] = useState(null); // index into betTiers
+    const [selectedTier, setSelectedTier] = useState(null);
     const [busy, setBusy] = useState(false);
     const [busyLabel, setBusyLabel] = useState("");
     const [approving, setApproving] = useState(false);
@@ -286,37 +272,29 @@
     const [error, setError] = useState("");
     const [history, setHistory] = useState([]);
     const [historyLoading, setHistoryLoading] = useState(false);
-    // Naik tiap kali mulai proses approve/flip baru. Dipakai sebagai `key` pada
-    // <Coin/> supaya komponennya benar-benar di-remount setiap flip/approve,
-    // bukan cuma update style -- ini yang mencegah animasi "nyangkut" (stuck)
-    // akibat CSS transition/animation yang tabrakan dengan sisa state sebelumnya.
+    const [historyError, setHistoryError] = useState("");
     const [animGen, setAnimGen] = useState(0);
 
-    // Provider baca-saja ke RPC publik. Dipakai untuk menampilkan data
-    // publik kontrak (bet tiers, paused, house balance) SEBELUM wallet
-    // connect sama sekali -- sebelumnya semua data ini baru dimuat lewat
-    // `provider` yang cuma ada setelah wallet konek, jadi UI kelihatan
-    // kosong ("Loading bet tiers...") sampai user refresh manual.
     const publicProviderRef = useRef(null);
     if (!publicProviderRef.current) {
-      try { publicProviderRef.current = new ethers.JsonRpcProvider(RPC_URL); } catch (e) { /* noop */ }
+      try { publicProviderRef.current = new ethers.JsonRpcProvider(RPC_URL); } catch (e) {}
     }
     const readProvider = provider || publicProviderRef.current;
 
     const onSepolia = chainIdHex === SEPOLIA_CHAIN_ID_HEX;
     function getInjectedProvider() {
-  if (typeof window === "undefined") return null;
-  if (window.ethereum) return window.ethereum;
-  try {
-    if (window.parent && window.parent !== window && window.parent.ethereum) {
-      return window.parent.ethereum;
+      if (typeof window === "undefined") return null;
+      if (window.ethereum) return window.ethereum;
+      try {
+        if (window.parent && window.parent !== window && window.parent.ethereum) {
+          return window.parent.ethereum;
+        }
+      } catch (e) {}
+      return null;
     }
-  } catch (e) {}
-  return null;
-}
 
-const injectedProvider = getInjectedProvider();
-const hasInjected = !!injectedProvider;
+    const injectedProvider = getInjectedProvider();
+    const hasInjected = !!injectedProvider;
     const betUnits = useMemo(() => {
       if (selectedTier === null || !betTiers[selectedTier]) return null;
       return betTiers[selectedTier];
@@ -324,19 +302,17 @@ const hasInjected = !!injectedProvider;
 
     const needsApproval = betUnits !== null && betUnits > 0n && (allowance === null || allowance < betUnits);
 
-    // ---------- Wallet connect ----------
     const connectWallet = useCallback(async () => {
       setError("");
       const eth = getInjectedProvider();
-if (!eth) {
-  setError("No wallet found. Open this page inside your wallet br...");
-  return;
-}
+      if (!eth) {
+        setError("No wallet found. Open this page inside your wallet's browser.");
+        return;
+      }
 
-setConnecting(true);
-try {
-  const p = new ethers.BrowserProvider(eth);
-        
+      setConnecting(true);
+      try {
+        const p = new ethers.BrowserProvider(eth);
         const accounts = await p.send("eth_requestAccounts", []);
         const net = await p.getNetwork();
         const s = await p.getSigner();
@@ -356,16 +332,16 @@ try {
       setSwitching(true);
       try {
         const eth = getInjectedProvider();
-await eth.request({
-  method: "wallet_switchEthereumChain",
-  params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
-});
+        await eth.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+        });
       } catch (err) {
         if (err && err.code === 4902) {
           try {
             await eth.request({
-  method: "wallet_addEthereumChain",
-  params: [{
+              method: "wallet_addEthereumChain",
+              params: [{
                 chainId: SEPOLIA_CHAIN_ID_HEX,
                 chainName: "Sepolia",
                 rpcUrls: [RPC_URL],
@@ -384,31 +360,17 @@ await eth.request({
       }
     }, []);
 
-    // ---------- Disconnect wallet ----------
-    // CATATAN JUJUR soal batasannya: standar wallet browser (EIP-1193) tidak
-    // punya cara resmi untuk dApp "memutus" koneksi dari sisi wallet -- yang
-    // bisa dApp lakukan cuma membersihkan sesi di sisi web ini (provider,
-    // signer, account, balance, dst di-reset ke null, tampilan kembali ke
-    // "Not connected"). Untuk benar-benar mencabut izin di level wallet, kita
-    // coba panggil wallet_revokePermissions (EIP-2255) -- ini didukung
-    // MetaMask & beberapa wallet lain, tapi TIDAK semua wallet mobile (mis.
-    // sebagian wallet berbasis in-app browser) mendukungnya. Kalau wallet
-    // kamu tidak mendukung, sesi lokal tetap kebersihan, tapi saat klik
-    // Connect lagi wallet mungkin langsung nyambung tanpa munculin dialog
-    // approval baru -- itu keterbatasan si wallet, bukan halaman ini.
     const disconnectWallet = useCallback(async () => {
       setError("");
       try {
         const eth = getInjectedProvider();
-if (eth && eth.request) {
+        if (eth && eth.request) {
           try {
             await eth.request({
               method: "wallet_revokePermissions",
               params: [{ eth_accounts: {} }],
             });
-          } catch (revokeErr) {
-            // Wallet tidak dukung revoke permission -- lanjut bersihkan sesi lokal saja.
-          }
+          } catch (revokeErr) {}
         }
       } finally {
         setProvider(null);
@@ -423,10 +385,9 @@ if (eth && eth.request) {
       }
     }, []);
 
-    // React to account/network changes from the wallet itself
     useEffect(() => {
       const eth = getInjectedProvider();
-if (!eth) return;
+      if (!eth) return;
       const onAccountsChanged = (accs) => {
         if (!accs || accs.length === 0) {
           setAccount(null); setSigner(null); setProvider(null);
@@ -434,14 +395,6 @@ if (!eth) return;
           setAccount(accs[0]);
         }
       };
-      // PENTING: ethers v6 BrowserProvider men-cache info network dari saat
-      // ia dibuat. Kalau network di wallet berubah tapi kita cuma update
-      // chainIdHex tanpa bikin ulang provider-nya, ethers akan mendeteksi
-      // mismatch dan lempar error "network changed: X => Y" di request
-      // berikutnya -- inilah yang bikin refreshData berhenti diam-diam dan
-      // "Loading bet tiers..." nyangkut sampai user refresh manual.
-      // Fix-nya: bikin ulang BrowserProvider (dan signer) tiap kali chain
-      // berubah, supaya ethers selalu punya info network yang baru.
       const onChainChanged = async (hex) => {
         setChainIdHex(hex);
         try {
@@ -453,25 +406,18 @@ if (!eth) return;
             try {
               const s = await p.getSigner();
               setSigner(s);
-            } catch (e) { /* signer belum siap, akan sync ulang lewat accountsChanged */ }
+            } catch (e) {}
           }
-        } catch (e) {
-          // biarkan saja, refreshPublicData tetap jalan lewat public RPC
-        }
+        } catch (e) {}
       };
       eth.on && eth.on("accountsChanged", onAccountsChanged);
-eth.on && eth.on("chainChanged", onChainChanged);
+      eth.on && eth.on("chainChanged", onChainChanged);
       return () => {
         eth.removeListener && eth.removeListener("accountsChanged", onAccountsChanged);
-eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
+        eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
       };
     }, [account]);
 
-    // ---------- Load on-chain data ----------
-    // Data PUBLIK kontrak (bet tiers, paused, house balance) tidak butuh
-    // wallet sama sekali -- selalu dimuat lewat readProvider (public RPC
-    // kalau belum connect, atau provider wallet kalau sudah), supaya UI
-    // langsung keisi begitu halaman dibuka.
     const refreshPublicData = useCallback(async () => {
       if (!readProvider) return;
       try {
@@ -487,14 +433,10 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
         setPaused(isPaused);
         setHouseBalance(house);
       } catch (err) {
-        // Non-fatal: jangan blokir UI, cukup log. Ini paling sering kejadian
-        // pas network baru saja berpindah.
         console.warn("refreshPublicData failed", err);
       }
     }, [readProvider]);
 
-    // Data AKUN (saldo & allowance) baru bisa dimuat kalau sudah connect
-    // dan di jaringan yang benar.
     const refreshAccountData = useCallback(async () => {
       if (!provider || !account || !onSepolia) return;
       try {
@@ -518,17 +460,31 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
     useEffect(() => { refreshPublicData(); }, [refreshPublicData]);
     useEffect(() => { refreshAccountData(); }, [refreshAccountData]);
 
-    // ---------- Riwayat flip (on-chain history, mirip riwayat di wheel) ----------
     const loadHistory = useCallback(async () => {
       if (!account || !readProvider) { setHistory([]); return; }
       setHistoryLoading(true);
+      setHistoryError("");
       try {
         const game = new ethers.Contract(COINFLIP_ADDRESS, COINFLIP_ABI, readProvider);
         const filter = game.filters.Flipped(account);
         const latestBlock = await readProvider.getBlockNumber();
-        // Batasi rentang blok supaya tidak membebani RPC publik.
-        const fromBlock = Math.max(0, latestBlock - 200000);
-        const logs = await game.queryFilter(filter, fromBlock, latestBlock);
+        const fromBlock = Math.max(0, latestBlock - HISTORY_LOOKBACK_BLOCKS);
+
+        let logs = [];
+        let failedChunks = 0;
+        let totalChunks = 0;
+        for (let start = fromBlock; start <= latestBlock; start += LOG_QUERY_CHUNK) {
+          const end = Math.min(start + LOG_QUERY_CHUNK - 1, latestBlock);
+          totalChunks += 1;
+          try {
+            const chunkLogs = await game.queryFilter(filter, start, end);
+            logs = logs.concat(chunkLogs);
+          } catch (chunkErr) {
+            failedChunks += 1;
+            console.warn("loadHistory chunk failed", start, end, chunkErr);
+          }
+        }
+
         const items = logs.slice(-25).reverse().map((log) => ({
           txHash: log.transactionHash,
           amount: log.args.amount,
@@ -538,8 +494,12 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
           payout: log.args.payout,
         }));
         setHistory(items);
+        if (failedChunks > 0 && items.length === 0) {
+          setHistoryError("Some history couldn't be loaded from the RPC node. Try again in a moment.");
+        }
       } catch (err) {
         console.warn("loadHistory failed", err);
+        setHistoryError(err?.shortMessage || err.message || "Failed to load history.");
       } finally {
         setHistoryLoading(false);
       }
@@ -547,14 +507,6 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
 
     useEffect(() => { loadHistory(); }, [loadHistory]);
 
-    // ---------- Approve (real tx) ----------
-    // Approve sekali dengan allowance MAKSIMUM (bukan cuma sejumlah bet saat ini).
-    // Ini penting: kalau approve cuma untuk `betUnits`, ganti tier bet lain kali
-    // akan minta approve lagi setiap ganti nominal. Dengan MaxUint256, approve
-    // ini cukup dilakukan SEKALI SAJA per wallet -- semua flip berikutnya di
-    // tier manapun langsung lompat ke flip tanpa approve ulang.
-    // Koin ikut berputar terus-menerus (idle spin) selama proses approve berlangsung,
-    // dari saat tanda tangan dikirim sampai tx approve dikonfirmasi di jaringan.
     const doApprove = useCallback(async () => {
       if (!signer || betUnits === null) return;
       setError("");
@@ -577,14 +529,6 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
       }
     }, [signer, betUnits, refreshData]);
 
-    // ---------- Flip (real tx) ----------
-    // PENTING: kontrak CoinFlip ini membayar payout di DALAM tx flip() yang sama
-    // (lihat event Flipped: won + payout langsung ada di situ). Jadi tidak ada
-    // fungsi "claim" terpisah untuk dipanggil setelah menang — begitu tx flip
-    // sudah confirmed, kalau menang, RIALO-nya sudah otomatis masuk ke wallet.
-    // Koin berputar (flipping) sejak tx dikirim sampai receipt on-chain benar-benar
-    // datang -- bukan lagi dibatasi timer buatan -- supaya hasil menang/kalah yang
-    // ditampilkan selalu sinkron dengan apa yang sebenarnya terjadi di chain.
     const runFlip = useCallback(async () => {
       setError("");
       setResult(null);
@@ -623,21 +567,13 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
           return;
         }
 
-        // Remount koin dari nol untuk flip ini -- membuang semua sisa state
-        // animasi/transisi CSS dari flip sebelumnya, supaya animasi selalu
-        // mulai dari kondisi bersih tiap kali (fix untuk animasi yang stuck).
         setAnimGen((g) => g + 1);
 
-        // Selama menunggu tanda tangan di wallet, koin sudah berputar idle
-        // supaya user tahu sesuatu sedang berlangsung.
         setApproving(true);
         setBusyLabel("Confirm the flip in your wallet...");
         const tx = await game.flip(betUnits, guess === "heads");
         setApproving(false);
 
-        // Dari titik ini koin masuk mode "flipping" sampai hasil ASLI dari
-        // chain didapat -- animasi & minimum delay berjalan paralel dengan
-        // await tx.wait(), bukan lagi dua proses yang lepas satu sama lain.
         setBusyLabel("Waiting for confirmation...");
         setFlipping(true);
         setSpinIndex((i) => i + 1);
@@ -645,13 +581,12 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
         const minSpinTime = new Promise((resolve) => setTimeout(resolve, 1700));
         const [receipt] = await Promise.all([tx.wait(), minSpinTime]);
 
-        // Parse Flipped event dari log receipt
         let parsed = null;
         for (const log of receipt.logs) {
           try {
             const ev = game.interface.parseLog(log);
             if (ev && ev.name === "Flipped") { parsed = ev; break; }
-          } catch (_) { /* bukan event kita, abaikan */ }
+          } catch (_) {}
         }
 
         const faceResult = parsed ? (parsed.args.result ? "heads" : "tails") : guess;
@@ -877,12 +812,12 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
               boxShadow: "0 4px 24px rgba(10,13,12,0.06)",
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: c.textMain }}>Riwayat Flip</div>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: c.textMain }}>Flip History</div>
                 {historyLoading && <Spinner color={c.textFaint} />}
               </div>
               {history.length === 0 ? (
                 <div style={{ fontSize: 12.5, color: c.textFaint }}>
-                  {historyLoading ? "Memuat riwayat…" : "Belum ada riwayat flip di wallet ini."}
+                  {historyLoading ? "Loading history…" : (historyError || "No flip history yet for this wallet.")}
                 </div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -904,10 +839,10 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
                         }} />
                         <div>
                           <div style={{ fontSize: 12.5, color: c.textMain, fontWeight: 700 }}>
-                            {h.won ? "Menang" : "Kalah"}
+                            {h.won ? "Won" : "Lost"}
                           </div>
                           <div style={{ fontSize: 11, color: c.textFaint }}>
-                            Tebak {h.guessHeads ? "Heads" : "Tails"} · Hasil {h.result ? "Heads" : "Tails"}
+                            Guessed {h.guessHeads ? "Heads" : "Tails"} · Result {h.result ? "Heads" : "Tails"}
                           </div>
                         </div>
                       </div>
@@ -932,25 +867,13 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
   } catch (err) {
     rootEl.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
       'color:#DC2626;font-family:system-ui,sans-serif;font-size:14px;text-align:center;padding:24px;">' +
-      'Terjadi error saat menampilkan game.<br/>' +
+      'An error occurred while rendering the game.<br/>' +
       '<span style="opacity:.6;font-size:12px;">(' + err.message + ')</span></div>';
     console.error(err);
   }
 </script>
 
 <script>
-  // ==========================================================
-  // Transform manual, bukan pakai auto-scan bawaan <script type="text/babel">.
-  //
-  // Kenapa: versi Babel standalone terbaru default memakai "automatic
-  // JSX runtime", yang menghasilkan kode berisi `import { jsx as _jsx }
-  // from "react/jsx-runtime"` di baris paling atas. Karena script ini
-  // dijalankan sebagai script biasa (bukan type="module"), baris import
-  // itu memicu error "Cannot use import statement outside a module".
-  //
-  // Solusi: transform manual dengan opsi runtime "classic", yang
-  // menghasilkan React.createElement(...) biasa — tidak butuh import.
-  // ==========================================================
   (function () {
     try {
       var src = document.getElementById('app-source').textContent;
@@ -965,7 +888,7 @@ eth.removeListener && eth.removeListener("chainChanged", onChainChanged);
       var rootEl = document.getElementById('root');
       rootEl.innerHTML = '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;' +
         'color:#DC2626;font-family:system-ui,sans-serif;font-size:14px;text-align:center;padding:24px;">' +
-        'Gagal mem-compile script.<br/>' +
+        'Failed to compile the script.<br/>' +
         '<span style="opacity:.6;font-size:12px;">(' + err.message + ')</span></div>';
       console.error(err);
     }
