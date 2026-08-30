@@ -602,9 +602,13 @@
         }
         if (requestId === null) throw new Error("Could not find BetPlaced event — bet may not have been recorded.");
 
-        // Immediately resync balance/allowance since the bet amount already
-        // left the wallet at this point, independent of win/lose.
-        refreshData();
+        // Immediately resync the PLAYER's own balance/allowance since the
+        // bet amount already left their wallet at this point — that's
+        // expected and fine to show right away. Deliberately NOT calling
+        // refreshPublicData() here: house balance only becomes meaningful
+        // once the bet is settled, so we leave it untouched until then to
+        // avoid it visibly changing before the result is shown.
+        refreshAccountData();
 
         // --- Wait for Chainlink VRF's oracle to settle the bet on its own.
         // This is a plain read-only poll (getBet). No transaction, no wallet
@@ -623,6 +627,8 @@
 
         setCoinFace(faceResult);
         setResult({ won, payout, txHash: placeReceipt.hash });
+        // Only now — after the result is already known and shown — refresh
+        // everything including house balance.
         await refreshData();
         await loadHistory();
       } catch (err) {
