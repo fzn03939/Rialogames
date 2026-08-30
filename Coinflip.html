@@ -271,6 +271,7 @@
     const [busy, setBusy] = useState(false);
     const [busyLabel, setBusyLabel] = useState("");
     const [approving, setApproving] = useState(false);
+    const [waitingVrf, setWaitingVrf] = useState(false);
     const [flipping, setFlipping] = useState(false);
     const [spinIndex, setSpinIndex] = useState(0);
     const [coinFace, setCoinFace] = useState("heads");
@@ -585,9 +586,11 @@
         const placeTx = await game.placeBet(betUnits, guess === "heads");
         setApproving(false);
 
+        // Start a continuous idle spin now — it keeps spinning through both
+        // the placeBet confirmation AND the VRF wait below, instead of
+        // stopping after one short animation and sitting static.
         setBusyLabel("Placing bet...");
-        setFlipping(true);
-        setSpinIndex((i) => i + 1);
+        setWaitingVrf(true);
         const placeReceipt = await placeTx.wait();
 
         let requestId = null;
@@ -613,7 +616,8 @@
         // --- Wait for Chainlink VRF's oracle to settle the bet on its own.
         // This is a plain read-only poll (getBet). No transaction, no wallet
         // popup, nothing for the player to sign or preview here — the result
-        // simply appears once the oracle has written it on-chain.
+        // simply appears once the oracle has written it on-chain. The coin
+        // keeps idle-spinning the whole time (waitingVrf stays true).
         setBusyLabel("Waiting for the random result...");
         let bet = await gameRead.getBet(requestId);
         while (!bet.resolved) {
@@ -625,7 +629,18 @@
         const won = bet.won;
         const payout = bet.payout;
 
+        // Now that the real result is known: stop the idle spin, kick off a
+        // single discrete flip animation landing on the CORRECT face, and
+        // wait for that animation to actually finish before showing the
+        // "You won/lost" text — so the text and the coin are never out of
+        // sync, unlike before where the text could appear mid-spin.
+        setWaitingVrf(false);
+        setBusyLabel("Revealing result...");
         setCoinFace(faceResult);
+        setFlipping(true);
+        setSpinIndex((i) => i + 1);
+        await new Promise((resolve) => setTimeout(resolve, 1700)); // matches the coin's flip transition duration
+
         setResult({ won, payout, txHash: placeReceipt.hash });
         // Only now — after the result is already known and shown — refresh
         // everything including house balance.
@@ -636,6 +651,7 @@
         setError(raw);
       } finally {
         setApproving(false);
+        setWaitingVrf(false);
         setFlipping(false);
         setBusy(false);
         setBusyLabel("");
@@ -717,15 +733,15 @@
               <div style={{
                 position: "absolute", left: "50%", top: "52%", transform: "translate(-50%,-50%)",
                 width: 190, height: 190, borderRadius: "50%",
-                background: `radial-gradient(circle, ${(flipping || approving) ? "rgba(13,148,136,0.14)" : "rgba(13,148,136,0.05)"} 0%, transparent 70%)`,
-                animation: (flipping || approving) ? "none" : "floatGlow 3.5s ease-in-out infinite",
+                background: `radial-gradient(circle, ${(flipping || approving || waitingVrf) ? "rgba(13,148,136,0.14)" : "rgba(13,148,136,0.05)"} 0%, transparent 70%)`,
+                animation: (flipping || approving || waitingVrf) ? "none" : "floatGlow 3.5s ease-in-out infinite",
                 pointerEvents: "none",
               }} />
-              <Coin key={animGen} face={coinFace} spinIndex={spinIndex} flipping={flipping} spinning={approving} />
+              <Coin key={animGen} face={coinFace} spinIndex={spinIndex} flipping={flipping} spinning={approving || waitingVrf} />
             </div>
 
             <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 6 }}>
-              {(flipping || approving) ? (
+              {(flipping || approving || waitingVrf) ? (
                 <div style={{ fontSize: 13.5, color: c.textMuted, animation: "popIn 0.2s ease" }}>
                   <Spinner color={c.textMuted} />{busyLabel || (approving ? "Confirming in wallet…" : "Flipping the coin…")}
                 </div>
