@@ -36,9 +36,9 @@
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
   }
-  @keyframes coinIdleSpin {
-    0% { transform: rotateY(0deg); }
-    100% { transform: rotateY(360deg); }
+  @keyframes coinSquishSpin {
+    0%, 100% { transform: scaleX(1); }
+    50% { transform: scaleX(0.04); }
   }
   .spin { animation: spin360 0.8s linear infinite; }
   .reduce-motion, .reduce-motion * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
@@ -169,45 +169,61 @@
     return addr.slice(0, 6) + "…" + addr.slice(-4);
   }
 
-  function Coin({ face, spinIndex, flipping, spinning, size = 176 }) {
-    const rotation = spinIndex * 360 + (face === "tails" ? 180 : 0);
+  function Coin({ face, flipping, spinning, size = 176 }) {
+    // Single flat image element, animated with a 2D horizontal squish
+    // (scaleX) instead of a 3D rotateY + backface-visibility flip. Some
+    // in-app wallet WebViews don't render backface-visibility reliably,
+    // which could leave the "front" face visible even when rotated past
+    // 90° — this 2D approach has no such dependency and is guaranteed to
+    // show the correct face once the animation settles.
+    const [displayFace, setDisplayFace] = useState(face);
+    const [squished, setSquished] = useState(false);
+    const prevFaceRef = useRef(face);
+
+    useEffect(() => {
+      if (face === prevFaceRef.current) return;
+      prevFaceRef.current = face;
+      setSquished(true);
+      const swapTimer = setTimeout(() => {
+        setDisplayFace(face);
+        setSquished(false);
+      }, 320); // half of the 0.32s scaleX transition below — swap happens while fully squished (invisible edge-on)
+      return () => clearTimeout(swapTimer);
+    }, [face]);
+
+    const isTails = displayFace === "tails";
+    const img = isTails ? TAILS_IMG : HEADS_IMG;
+
     return (
       <div style={{
         width: size, height: size, margin: "0 auto",
-        perspective: 900,
         filter: (flipping || spinning) ? "drop-shadow(0 0 26px rgba(13,148,136,0.28))" : "drop-shadow(0 8px 16px rgba(10,13,12,0.12))",
       }}>
         <div style={{
-          position: "relative", width: "100%", height: "100%",
-          transformStyle: "preserve-3d",
-          transform: (flipping || spinning) ? `rotateY(${rotation}deg)` : undefined,
-          transition: flipping
-            ? "transform 1.65s cubic-bezier(0.2, 0.9, 0.25, 1)"
-            : spinning
-            ? "transform 0.9s linear"
-            : "transform 0.5s ease",
+          width: "100%", height: "100%", borderRadius: "50%",
+          background: isTails
+            ? `radial-gradient(circle at 32% 28%, #FFFFFF, #F5F1E7 72%)`
+            : `radial-gradient(circle at 32% 28%, #FFFFFF, #F0F3F2 72%)`,
+          border: `2px solid ${isTails ? c.goldBorder : c.mintBorder}`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          boxShadow: `inset 0 0 0 6px ${isTails ? "rgba(183,121,31,0.06)" : "rgba(13,148,136,0.06)"}`,
+          transform: squished ? "scaleX(0.04)" : "scaleX(1)",
+          transition: "transform 0.32s ease-in-out",
+          // The continuous idle spin only runs when NOT mid-reveal-squish,
+          // so the two animation mechanisms never fight over the same
+          // property at the same time.
+          animation: (spinning && !squished) ? "coinSquishSpin 0.7s linear infinite" : "none",
         }}>
-          <div style={{
-            position: "absolute", inset: 0, borderRadius: "50%",
-            backfaceVisibility: "hidden",
-            background: `radial-gradient(circle at 32% 28%, #FFFFFF, #F0F3F2 72%)`,
-            border: `2px solid ${c.mintBorder}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "inset 0 0 0 6px rgba(13,148,136,0.06)",
-          }}>
-            <img src={HEADS_IMG} alt="Heads" style={{ width: "72%", height: "72%", objectFit: "cover", borderRadius: "50%" }} onError={(e)=>{e.target.style.display='none';}} />
-          </div>
-          <div style={{
-            position: "absolute", inset: 0, borderRadius: "50%",
-            backfaceVisibility: "hidden",
-            transform: "rotateY(180deg)",
-            background: `radial-gradient(circle at 32% 28%, #FFFFFF, #F5F1E7 72%)`,
-            border: `2px solid ${c.goldBorder}`,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            boxShadow: "inset 0 0 0 6px rgba(183,121,31,0.06)",
-          }}>
-            <img src={TAILS_IMG} alt="Tails" style={{ width: "50%", height: "50%", objectFit: "contain" }} onError={(e)=>{e.target.style.display='none';}} />
-          </div>
+          <img
+            src={img}
+            alt={isTails ? "Tails" : "Heads"}
+            style={
+              isTails
+                ? { width: "50%", height: "50%", objectFit: "contain" }
+                : { width: "72%", height: "72%", objectFit: "cover", borderRadius: "50%" }
+            }
+            onError={(e) => { e.target.style.display = 'none'; }}
+          />
         </div>
       </div>
     );
@@ -468,18 +484,6 @@
     }, [refreshPublicData, refreshAccountData]);
 
     useEffect(() => { refreshPublicData(); }, [refreshPublicData]);
-
-    // Keep the coin visibly spinning throughout the wallet-confirm and
-    // VRF-wait phases by periodically bumping spinIndex — this reuses the
-    // exact same transform+transition mechanism as the final reveal spin
-    // (see Coin component), so there is never a switch between a CSS
-    // keyframe animation and a transition, which is what caused the
-    // revealed face to sometimes render incorrectly before.
-    useEffect(() => {
-      if (!(approving || waitingVrf)) return;
-      const id = setInterval(() => setSpinIndex((i) => i + 1), 900);
-      return () => clearInterval(id);
-    }, [approving, waitingVrf]);
     useEffect(() => { refreshAccountData(); }, [refreshAccountData]);
 
     const loadHistory = useCallback(async () => {
@@ -651,10 +655,9 @@
         // sync, unlike before where the text could appear mid-spin.
         setWaitingVrf(false);
         setBusyLabel("Revealing result...");
-        setCoinFace(faceResult);
         setFlipping(true);
-        setSpinIndex((i) => i + 3);
-        await new Promise((resolve) => setTimeout(resolve, 1700)); // matches the coin's flip transition duration
+        setCoinFace(faceResult); // Coin component squishes, swaps to the correct image, then un-squishes on its own
+        await new Promise((resolve) => setTimeout(resolve, 700)); // matches the coin's squish-reveal duration
 
         setResult({ won, payout, txHash: placeReceipt.hash });
         // Only now — after the result is already known and shown — refresh
@@ -752,7 +755,7 @@
                 animation: (flipping || approving || waitingVrf) ? "none" : "floatGlow 3.5s ease-in-out infinite",
                 pointerEvents: "none",
               }} />
-              <Coin key={animGen} face={coinFace} spinIndex={spinIndex} flipping={flipping} spinning={approving || waitingVrf} />
+              <Coin key={animGen} face={coinFace} flipping={flipping} spinning={approving || waitingVrf} />
             </div>
 
             <div style={{ minHeight: 46, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 6 }}>
