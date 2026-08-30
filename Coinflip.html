@@ -106,32 +106,30 @@
 <script type="text/plain" id="app-source">
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-  const COINFLIP_ADDRESS = "0x869afB4A96fDe446825fD148dC25da0463192D30";
+  const COINFLIP_ADDRESS = "0xf6f81CC2Acb9227FA882622a2f2100bEAb4D8F0e";
   const TOKEN_ADDRESS    = "0x12934cb5e37e1eeec80e889df7614febe312ecd9";
   const TOKEN_SYMBOL     = "RIALO";
   const SEPOLIA_CHAIN_ID_HEX = "0xaa36a7";
   const RPC_URL = "https://ethereum-sepolia-rpc.publicnode.com";
   const LOG_QUERY_CHUNK = 5000;
   const HISTORY_LOOKBACK_BLOCKS = 200000;
-  // How often (ms) to poll for the target block while waiting to resolve a bet
-  const RESOLVE_POLL_INTERVAL_MS = 2000;
+  // How often (ms) to poll the contract while waiting for Chainlink VRF to
+  // fulfill the bet in the background. This is a read-only poll — no wallet
+  // signature or preview involved, so there is nothing for the player to see.
+  const RESOLVE_POLL_INTERVAL_MS = 2500;
 
   const HEADS_IMG = "logo_transparent.png";
   const TAILS_IMG = "icon-app.svg";
 
   const COINFLIP_ABI = [
-    "function placeBet(uint256 amount, bool guessHeads) external returns (uint256 betId)",
-    "function resolveBet(uint256 betId) external",
-    "function claimRefund(uint256 betId) external",
+    "function placeBet(uint256 amount, bool guessHeads) external returns (uint256 requestId)",
     "function getBetTiers() view returns (uint256[])",
     "function isValidBet(uint256 amount) view returns (bool)",
     "function paused() view returns (bool)",
     "function houseBalance() view returns (uint256)",
-    "function isResolvable(uint256 betId) view returns (bool)",
-    "function getBet(uint256 betId) view returns (tuple(address player, uint256 amount, bool guessHeads, uint256 targetBlock, bool resolved, bool refunded, bool result, bool won, uint256 payout))",
-    "event BetPlaced(uint256 indexed betId, address indexed player, uint256 amount, bool guessHeads, uint256 targetBlock)",
-    "event Flipped(uint256 indexed betId, address indexed player, uint256 amount, bool guessHeads, bool result, bool won, uint256 payout)",
-    "event BetRefunded(uint256 indexed betId, address indexed player, uint256 amount)",
+    "function getBet(uint256 requestId) view returns (tuple(address player, uint256 amount, bool guessHeads, bool resolved, bool result, bool won, uint256 payout))",
+    "event BetPlaced(uint256 indexed requestId, address indexed player, uint256 amount, bool guessHeads)",
+    "event Flipped(uint256 indexed requestId, address indexed player, uint256 amount, bool guessHeads, bool result, bool won, uint256 payout)",
   ];
 
   const ERC20_ABI = [
@@ -578,9 +576,10 @@
 
         setAnimGen((g) => g + 1);
 
-        // --- Step 1: placeBet. This transaction never reveals the outcome —
-        // it only moves the bet amount into the contract. A wallet's preview
-        // of this tx will only ever show "-amount", with no way to know win/lose.
+        // --- The ONLY transaction the player signs. It only moves the bet
+        // amount into the contract and requests randomness from Chainlink
+        // VRF — it never reveals the outcome, so its wallet preview will
+        // only ever show "-amount".
         setApproving(true);
         setBusyLabel("Confirm your bet in your wallet...");
         const placeTx = await game.placeBet(betUnits, guess === "heads");
@@ -591,63 +590,36 @@
         setSpinIndex((i) => i + 1);
         const placeReceipt = await placeTx.wait();
 
-        let betId = null;
-        let targetBlock = null;
+        let requestId = null;
         for (const log of placeReceipt.logs) {
           try {
             const ev = game.interface.parseLog(log);
             if (ev && ev.name === "BetPlaced") {
-              betId = ev.args.betId;
-              targetBlock = ev.args.targetBlock;
+              requestId = ev.args.requestId;
               break;
             }
           } catch (_) {}
         }
-        if (betId === null) throw new Error("Could not find BetPlaced event — bet may not have been recorded.");
+        if (requestId === null) throw new Error("Could not find BetPlaced event — bet may not have been recorded.");
 
         // Immediately resync balance/allowance since the bet amount already
         // left the wallet at this point, independent of win/lose.
         refreshData();
 
-        // --- Step 2: wait for the target block to actually exist on chain,
-        // then resolve. Nobody — not even this tab — can know the outcome
-        // before that block is mined.
-        setBusyLabel("Waiting for the settlement block...");
-        let currentBlock = await readProvider.getBlockNumber();
-        while (currentBlock <= Number(targetBlock)) {
+        // --- Wait for Chainlink VRF's oracle to settle the bet on its own.
+        // This is a plain read-only poll (getBet). No transaction, no wallet
+        // popup, nothing for the player to sign or preview here — the result
+        // simply appears once the oracle has written it on-chain.
+        setBusyLabel("Waiting for the random result...");
+        let bet = await gameRead.getBet(requestId);
+        while (!bet.resolved) {
           await new Promise((resolve) => setTimeout(resolve, RESOLVE_POLL_INTERVAL_MS));
-          currentBlock = await readProvider.getBlockNumber();
+          bet = await gameRead.getBet(requestId);
         }
 
-        setBusyLabel("Confirm settlement in your wallet...");
-        let parsed = null;
-        try {
-          const resolveTx = await game.resolveBet(betId);
-          setBusyLabel("Settling...");
-          const resolveReceipt = await resolveTx.wait();
-          for (const log of resolveReceipt.logs) {
-            try {
-              const ev = game.interface.parseLog(log);
-              if (ev && ev.name === "Flipped") { parsed = ev; break; }
-            } catch (_) {}
-          }
-        } catch (resolveErr) {
-          // Someone else (frontend/keeper/other player) may have resolved
-          // this bet first — that's fine, just read the settled outcome.
-          const bet = await gameRead.getBet(betId);
-          if (!bet.resolved) throw resolveErr;
-          parsed = {
-            args: {
-              result: bet.result,
-              won: bet.won,
-              payout: bet.payout,
-            },
-          };
-        }
-
-        const faceResult = parsed ? (parsed.args.result ? "heads" : "tails") : guess;
-        const won = parsed ? parsed.args.won : null;
-        const payout = parsed ? parsed.args.payout : 0n;
+        const faceResult = bet.result ? "heads" : "tails";
+        const won = bet.won;
+        const payout = bet.payout;
 
         setCoinFace(faceResult);
         setResult({ won, payout, txHash: placeReceipt.hash });
@@ -694,7 +666,7 @@
                 Coin<span style={{ color: c.mint }}>Flip</span>
               </div>
               <div style={{ fontSize: 12, color: c.textMuted, marginTop: 2 }}>
-                Double or nothing, in {TOKEN_SYMBOL} · 
+                Double or nothing, in {TOKEN_SYMBOL} · secured by Chainlink VRF
               </div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
