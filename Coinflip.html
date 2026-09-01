@@ -106,7 +106,7 @@
 <script type="text/plain" id="app-source">
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
 
-  const COINFLIP_ADDRESS = "0xf6f81CC2Acb9227FA882622a2f2100bEAb4D8F0e";
+  const COINFLIP_ADDRESS = "0x869afB4A96fDe446825fD148dC25da0463192D30";
   const TOKEN_ADDRESS    = "0x12934cb5e37e1eeec80e889df7614febe312ecd9";
   const TOKEN_SYMBOL     = "RIALO";
   const SEPOLIA_CHAIN_ID_HEX = "0xaa36a7";
@@ -122,14 +122,14 @@
   const TAILS_IMG = "icon-app.svg";
 
   const COINFLIP_ABI = [
-    "function placeBet(uint256 amount, bool guessHeads) external returns (uint256 requestId)",
+    "function placeBet(uint256 amount, bool guessHeads) external returns (uint256 betId)",
     "function getBetTiers() view returns (uint256[])",
     "function isValidBet(uint256 amount) view returns (bool)",
     "function paused() view returns (bool)",
     "function houseBalance() view returns (uint256)",
-    "function getBet(uint256 requestId) view returns (tuple(address player, uint256 amount, bool guessHeads, bool resolved, bool result, bool won, uint256 payout))",
-    "event BetPlaced(uint256 indexed requestId, address indexed player, uint256 amount, bool guessHeads)",
-    "event Flipped(uint256 indexed requestId, address indexed player, uint256 amount, bool guessHeads, bool result, bool won, uint256 payout)",
+    "function getBet(uint256 betId) view returns (tuple(address player, uint256 amount, bool guessHeads, uint256 targetBlock, bool resolved, bool refunded, bool result, bool won, uint256 payout))",
+    "event BetPlaced(uint256 indexed betId, address indexed player, uint256 amount, bool guessHeads, uint256 targetBlock)",
+    "event Flipped(uint256 indexed betId, address indexed player, uint256 amount, bool guessHeads, bool result, bool won, uint256 payout)",
   ];
 
   const ERC20_ABI = [
@@ -605,24 +605,24 @@
         const placeTx = await game.placeBet(betUnits, guess === "heads");
         setApproving(false);
 
-        // Start a continuous idle spin now — it keeps spinning through both
-        // the placeBet confirmation AND the VRF wait below, instead of
-        // stopping after one short animation and sitting static.
+        // Start a continuous idle spin now — it keeps spinning while we wait
+        // for placeBet to confirm AND while we wait for our own resolver bot
+        // to settle the bet, instead of stopping after a short animation.
         setBusyLabel("Placing bet...");
         setWaitingVrf(true);
         const placeReceipt = await placeTx.wait();
 
-        let requestId = null;
+        let betId = null;
         for (const log of placeReceipt.logs) {
           try {
             const ev = game.interface.parseLog(log);
             if (ev && ev.name === "BetPlaced") {
-              requestId = ev.args.requestId;
+              betId = ev.args.betId;
               break;
             }
           } catch (_) {}
         }
-        if (requestId === null) throw new Error("Could not find BetPlaced event — bet may not have been recorded.");
+        if (betId === null) throw new Error("Could not find BetPlaced event — bet may not have been recorded.");
 
         // Immediately resync the PLAYER's own balance/allowance since the
         // bet amount already left their wallet at this point — that's
@@ -632,21 +632,22 @@
         // avoid it visibly changing before the result is shown.
         refreshAccountData();
 
-        // --- Wait for Chainlink VRF's oracle to settle the bet on its own.
+        // --- Wait for our own resolver bot to settle the bet on its own.
         // This is a plain read-only poll (getBet). No transaction, no wallet
         // popup, nothing for the player to sign or preview here — the result
-        // simply appears once the oracle has written it on-chain. The coin
+        // simply appears once the bot has written it on-chain. The coin
         // keeps idle-spinning the whole time (waitingVrf stays true).
-        setBusyLabel("Waiting for the random result...");
-        let bet = await gameRead.getBet(requestId);
+        setBusyLabel("Waiting for the result...");
+        let bet = await gameRead.getBet(betId);
         while (!bet.resolved) {
           await new Promise((resolve) => setTimeout(resolve, RESOLVE_POLL_INTERVAL_MS));
-          bet = await gameRead.getBet(requestId);
+          bet = await gameRead.getBet(betId);
         }
 
         const faceResult = bet.result ? "heads" : "tails";
         const won = bet.won;
         const payout = bet.payout;
+
 
         // Now that the real result is known: stop the idle spin, kick off a
         // single discrete flip animation landing on the CORRECT face, and
